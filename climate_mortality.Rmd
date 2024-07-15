@@ -1,0 +1,965 @@
+---
+title: "Impacts of Climate Change on Mortality: An extrapolation of temperature 
+effects based on time series data in France"
+author: "Quentin Guibert"
+date: "2024-07-15"
+header-includes:
+  - \usepackage{amsmath,amsthm,amssymb,mathabx, bm, bbm, color}
+  - \usepackage{dsfont}
+  - \usepackage{stackengine}
+  - \usepackage{scalerel}
+  - \newcommand{\E}{\mathbb{E}}
+  - \newcommand{\Yvec}{\boldsymbol{Y}}
+  - \newcommand{\Avec}{\boldsymbol{A}}
+  - \newcommand{\Evec}{\boldsymbol{E}}
+  - \newcommand{\uvec}{\boldsymbol{u}}
+  - \newcommand{\avec}{\boldsymbol{a}}
+  - \newcommand{\bvec}{\boldsymbol{b}}
+  - \newcommand{\nvec}{\boldsymbol{n}}
+  - \newcommand{\rvec}{\boldsymbol{r}}
+  - \newcommand{\mvec}{\boldsymbol{m}}
+  - \newcommand{\cvec}{\boldsymbol{c}}
+  - \newcommand{\gvec}{\boldsymbol{g}}
+  - \newcommand{\hvec}{\boldsymbol{h}}
+  - \newcommand{\pvec}{\boldsymbol{p}}
+  - \newcommand{\dvec}{\boldsymbol{D}}
+  - \newcommand{\Thetavec}{\boldsymbol{\Theta}}
+  - \newcommand{\betavec}{\boldsymbol{\beta}}
+  - \newcommand{\etavec}{\boldsymbol{\eta}}
+  - \newcommand{\xivec}{\boldsymbol{\xi}}
+  - \newcommand{\alphavec}{\boldsymbol{\alpha}}
+  - \newcommand{\omegavec}{\boldsymbol{\omega}}
+  - \newcommand{\Omegavec}{\boldsymbol{\Omega}}
+  - \newcommand{\muvec}{\boldsymbol{\mu}}
+  - \newcommand{\thetavec}{\boldsymbol{\theta}}
+  - \newcommand{\lambdavec}{\boldsymbol{\lambda}}
+  - \newcommand{\Lambdavec}{\boldsymbol{\Lambda}}
+  - \newcommand{\Sigmavec}{\boldsymbol{\Sigma}}
+  - \newcommand{\zetavec}{\boldsymbol{\zeta}}
+  - \newcommand{\kappavec}{\boldsymbol{\kappa}}
+  - \newcommand{\epsilonvec}{\boldsymbol{\epsilon}}
+  - \newcommand{\gammavec}{\boldsymbol{\gamma}}
+  - \newcommand{\deltavec}{\boldsymbol{\delta}}
+  - \newcommand{\pivec}{\boldsymbol{\pi}}
+  - \newcommand{\Pivec}{\boldsymbol{\Pi}}
+  - \newcommand{\psivec}{\boldsymbol{\psi}}
+  - \newcommand{\Psivec}{\boldsymbol{\Psi}}
+  - \newcommand{\Gammavec}{\boldsymbol{\Gamma}}
+  - \newcommand{\phivec}{\boldsymbol{\phi}}
+  - \newcommand{\Phivec}{\boldsymbol{\Phi}}
+  - \newcommand{\varphivec}{\boldsymbol{\varphi}}
+  - \newcommand{\evec}{\boldsymbol{e}}
+  - \newcommand{\ovec}{\boldsymbol{o}}
+  - \newcommand{\fvec}{\boldsymbol{f}}
+  - \newcommand{\Hvec}{\boldsymbol{H}}
+  - \newcommand{\Qvec}{\boldsymbol{Q}}
+  - \newcommand{\qvec}{\boldsymbol{q}}
+output:
+  rmdformats::robobook:
+    highlight: kate
+    use_bookdown: yes
+    css: style.css
+    lightbox: yes
+    gallery: yes
+    code_folding: show
+  code-copy: yes
+  html-math-method: katex
+  pdf_document:
+    toc: yes
+    toc_depth: 2
+  html_document:
+    toc: yes
+    toc_depth: '2'
+    df_print: paged
+institute: "CEREMADE, Université Paris Dauphine-PLS"
+editor_options:
+  markdown:
+    wrap: 72
+bibliography: references.bib
+---
+
+```{=html}
+<style>
+body { text-align: justify}
+</style>
+```
+This R Markdown Notebook reproduces the numerical applications presented
+in the paper "Impacts of Climate Change on Mortality: An extrapolation
+of temperature effects based on time series data in France", available
+[here](https://arxiv.org/abs/2406.02054).
+
+The objective of this Notebook is to illustrate the estimation techniques and the
+presentation of results described in this article. Since some mortality data are
+not publicly available, the estimates obtained from the DLNM model are presented
+but cannot be reproduced. However, we present the functions to be applied,
+enabling the reader to replicate the process with their own data.
+
+For the sake of brevity and code clarity, we limit the presentation to the
+aggregated results in Metropolitan France only. We also consider only the
+scenarios related to one climate model instead of the 12 presented in this paper.
+This simplification does not limit the understanding of the code or the
+reproducibility of the results.
+
+Note that we use an adjusted version of the
+[`MultiMoMo`](https://github.com/jensrobben/MultiMoMo) package. Some functions
+have been recoded or added to better suit our application.
+
+# Set-up
+
+First, we set up the working environment and load the necessary
+functions and packages for the application.
+
+```{r setup, include=FALSE}
+# Global options
+knitr::opts_chunk$set(cache = FALSE, warning = FALSE, message = FALSE, 
+                      fig.retina = 2)
+options(encoding = 'UTF-8')
+Sys.setlocale("LC_TIME", "English")
+```
+
+```{r, echo=TRUE, message=FALSE, warning=FALSE}
+# Folders
+fold <- getwd()
+fold_data <- paste0(fold, "/data/")
+fold_bib <- paste0(fold, "/functions/")
+```
+
+```{r, echo=TRUE, message=FALSE, warning=FALSE}
+# Load functions
+for (f in list.files(fold_bib))
+  source(paste(fold_bib,f,sep=""), encoding = "UTF-8")
+#----------------------------------------------------------
+# Load packages
+invisible(lapply(c(
+  "MultiMoMo",
+  "HMDHFDplus",
+  "systemfit",
+  "lattice",
+  "grid",
+  "ggplot2",
+  "gridExtra",
+  "locfit",
+  "scales",
+  "lubridate",
+  "splines",
+  "mgcv",
+  "dlnm",
+  "MASS",
+  "mvtnorm",
+  "Rfast",
+  "parallel",
+  "data.table",
+  "formattable",
+  "RColorBrewer",
+  "readxl",
+  "kableExtra",
+  "dplyr",
+  "tidyr",
+  "tidyverse",
+  "rmarkdown",
+  "ggthemes",
+  "cowplot",
+  "ggridges",
+  "viridis",
+  "hrbrthemes",
+  "colorspace",
+  "ggbeeswarm",
+  "ggpubr"),
+  instal.import.package))
+options(dplyr.summarise.inform = FALSE)
+#----------------------------------------------------------
+# Graphical parameters
+theme_set(theme_bw())
+trellis.device(color = FALSE)
+```
+
+```{r, echo = TRUE, message=FALSE, warning=FALSE}
+
+
+# Forecasting period
+start_year <- 2020
+end_year <- 2100
+year_breaks <- c(1980, 1989, 1999, 2009, 2019, 2029, 2039, 2049, 2059, 
+                 2069, 2079, 2089, 2100)
+year_labels <- c("1980s", "1990s", "2000s", "2010s", "2020s", "2030s", 
+                 "2040s", "2050s", "2060s", "2070s", "2080s","2090s")
+
+# Heatwave parameter - french definition
+min_level <- 18
+max_level <- 30
+
+# Monte-Carlo simulations
+nsim <- 20 # number of simulations
+parallel <- "no" # parallel option
+ncpus <- 1L # number of cores
+
+# Other parameters
+AGE_MAX <- 105
+```
+
+# Load data
+
+In this section, we start by loading the input data. Three types of information
+are considered: historical mortality data (including daily temperatures and
+daily deaths), annual mortality data, and climate scenarios.
+
+More information regarding the data description is available in [the
+paper](https://arxiv.org/abs/2406.02054).
+
+## Daily Mortality data
+
+We import daily data series for death counts (which are not freely available)
+and temperatures. This dataset is constructed by merging:
+
+-   daily mortality data,
+-   daily temperature data.
+
+```{r, eval=TRUE, message=FALSE, warning=FALSE}
+daily_data <- get(load(file =  paste0(fold_data, "/daily_data.RData")))
+
+# Summary of the data - list with 2 items for females (`f`) and males (`m`)
+head(daily_data)
+
+# Get quantiles for extreme hot and cold of average daily temperature
+q025 <- quantile(daily_data$m$tavg, 0.025)
+q975 <- quantile(daily_data$m$tavg, 0.975)
+```
+
+The object `daily_data` is a list containing two datasets for females (`f`) and
+males (`m`). Each dataset contains:
+
+-   `datedec`: the date,
+-   `age_bk`: age buckets,
+-   `nb_deaths`: number of deaths,
+-   `years`: years,
+-   `tmax`: maximum temperature of the day
+-   `tmax3`: maximum temperature over the last 3 days
+-   `tmin`: minimum temperature over the last 3 days
+-   `tmin3`: minimum temperature over the last 3 days
+-   `tavg`: average temperature of the day
+-   `tavg3`: average temperature over the last 3 days
+-   `time`: day number as a integer number
+-   `dow`: day of the week as a integer number
+-   `month`: month number
+
+Our DLNM model for `nb_deaths` is fitted based on the `tavg` variable, as
+well as `datedec`, `dow` and `month`.
+
+## Annual mortality data from the HMD
+
+The annual mortality data considered are extracted from the Human Mortality 
+Database \citep{human_mortality_database_university_2024}. We downloaded the
+exposure to risk and death counts from the
+[HMD website](https://www.mortality.org/). We consider data from Metropolitan
+France for the calibration period $\mathcal{T}_y = \{1980, \ldots, 2019\}$
+and the age range $\mathcal{X} = \{0, \ldots, 105\}$.
+
+```{r, echo=TRUE, message=FALSE, warning=FALSE}
+mort_dt <- get(load(file =  paste0(fold_data, "/mort_dt.RData")))
+
+```
+
+
+## Data from climate models
+
+We import daily data series for climate trajectories. The models selected in the
+paper are the 12 models available through the \citet{drias} portal for
+RCP2.6, RCP4.5, and RCP8.5 scenarios. In this Notebook, we only consider
+the model CNRM-CM5 / ALADIN63 with the RCP8.5 scenario.
+
+```{r, echo=TRUE, message=FALSE, warning=FALSE}
+clim_model <- get(load(file = paste0(fold_data, 
+                                     "ALADIN63_CNRM-CM5_RCP8.5.RData")))
+```
+
+# Estimating the DLNM
+
+The distributed lag non-linear generalized model (DLNM) is a gold standard in 
+climate epidemiology for assessing the impact of delayed environmental 
+factors on a response variable [@gasparrini_distributed_2010, @guo_gasparrini14].
+
+We fit DLNM models for each gender and each age bucket. This model aims to assess
+the influence of temperature on the daily number of deaths. The number of daily
+deaths $D_{k,t,d}^{(g)}$, aggregated by $K$ age groups and by sex, for each day
+$d \in D^\star = \left\lbrace 1,2,\ldots, 365, (366)\right\rbrace$
+of year $t$ is modeled by
+$$
+\ln( \E [D_{k,t,d}^{(g)}])=\eta_k + s(\vartheta_{d,t}, L; \thetavec_k ) 
++ \uvec_d \gammavec_k^\top
++ \sum_{p=1}^{P}{h_p( z_{d,p} ; \zetavec_k )},
+$$
+where: 
+
+  - $s (\vartheta_{d,t} ; l, \beta_{k})$ is a cross-basis (non-linear) function,
+  capturing the cumulated effect of the daily mean temperature $\vartheta_{d,t}$
+  over a maximum of $L$ days,
+  - $h_p(z_{d,p} ; \zetavec_k )$ are natural cubic spline to account for seasonal
+  variations, e.g year, day of the week or month as features.
+  - confounding variables $\uvec_d$ could be integrated as a linear effect,
+  e.g. pollutant. 
+
+We consider a bi-dimensional spline function $s$ as the surface of Relative Risk 
+(RR)
+$$
+s(\vartheta_{d,t} ; L, \thetavec_k ) = \int_{0}^{L}{f\cdot w(\vartheta_{d-l,t},l;\thetavec_k)dl} \approx \sum_{l=0}^{L}{f\cdot w(\vartheta_{d-l,t},l;\thetavec_k)},
+$$
+where $f\cdot w$ is a bi-dimensional integrable function, and $\thetavec_{k}$ a
+vector of parameters. 
+
+All models are calibrated based on daily temperature data over the
+period 1980-2019, using the **dlnm** package [@dlnm14]. Cubic spline with internal
+knots placed at the 10th, 75th, and 90th percentiles of the daily
+temperature distribution is considered. The lag $L$ is equal to 21 days.
+
+## Parameters
+
+```{r, echo=TRUE, fig.width=12, fig.height=8 , message=F, warning=F}
+
+# Segmentation parameters
+list_sexe <- list(m = 1, f = 2)
+age_breaks <- c(0, 64, 74, 84, Inf)
+age_labels <- c("0-64", "65-74", "75-84", "85+")
+
+# Training period
+annee_deb <- 1980
+annee_fin <- 2019
+
+# DLNM Parameters
+param_dlnm_whole <- list(
+  # main model, cubic natural spline with three internal knots in
+  # the 10th, 75th, 90th percentiles of the temperature distribution
+  varfun = "bs",
+  vardegree = 2,
+  varper  = c(10, 75, 90),
+  ## specification of the lag function
+  # Definition of the maximum lag, that is, 21 days
+  lag  = 21,
+  lagnk  = 3,
+  ## degree of freedom for seasonality
+  dfseas  = 8,
+  ## degree of freedom for trend
+  dftrend = NULL
+  )
+```
+
+## Model estimation
+
+We fit the model for each sex and age bucket.
+
+```{r, echo=TRUE, fig.width=12, fig.height=8 , message=F, warning=F, comment= F}
+fit <- lapply(daily_data, function(x)
+{
+  fit_dlnm(x, param_dlnm_whole, per_age = T, summer = F, psi = NULL)
+}
+)
+```
+
+## Results and diagnostics
+
+We calculate the historical count of deaths attributed to temperatures for each
+day of the year $d \in \mathcal{T}_d$, and age $x \in X_k$, $k \in \{1, \ldots, K\}$ 
+using the formula
+$$
+\bar{D}_{x,t,d}^{(g)}= (1-\exp{\left(- s(\vartheta_{d,t} ; L, \widehat{\thetavec}_k ) \right)}) \times D_{x,t,d}^{(g)}.
+$$
+The term $\exp{\left(  s(\vartheta_{d,t} ; L, \widehat{\thetavec}_k ) \right)}$ 
+corresponds to the RR of temperature mortality. We display below the RR curves 
+for temperatures.
+
+```{r, echo = TRUE, fig.width=12, fig.height=8 , message=T, warning=T}
+summary_dlnm_all_sex(fit)
+```
+
+We then analyze the goodness of fit performance of our models. For this, we 
+display the residuals of the Deviance by year and age group, and compare the
+distribution of observed (in blue) and predicted (in green) mortality counts for
+each month, distinguishing by sex and decade.
+
+```{r, echo = TRUE, fig.width=12, fig.height=8 , message=T, warning=T}
+# in-sample performance of the fitted model for the whole year.
+perf_mort <- lapply(names(daily_data), function(x){
+  perf_dnlm(fit[[x]])
+})
+names(perf_mort) <- names(daily_data)
+```
+
+### Females
+
+```{r, echo=FALSE, fig.width=12, fig.height=12 , message=F, warning=F}
+perf_mort$f$residual
+perf_mort$f$perf
+```
+
+### Males
+
+```{r dlnm_resid_m, echo=FALSE, fig.width=12, fig.height=12 , message=F, warning=F}
+perf_mort$m$residual
+perf_mort$m$perf
+```
+
+## Estimation of the temperature- attributable fractions
+
+The model's setup allows for a range of predictions that precisely gauge the 
+influence of heat, cold, or specific events occurring on each days of subset 
+$D \subseteq D^{\star}$.
+
+The sum of the contributions from each day of this subperiod $D$
+for a year $t \in \mathcal{T}_y$ is as follow
+$$
+\bar{D}_{x,t}^{(g)} = \sum_{d \in D}{\bar{D}_{x,t,d}^{(g)}\mathbf{1}_{\left\lbrace d \in D\right\rbrace }}.
+$$
+
+Thus, the  total attributable fraction is estimated for each age $x \in X_k$ and
+year $t \in \mathcal{T}_y$ as 
+$$
+\theta_{x,t}^{(g)}= \dfrac{\bar{D}_{x,t}^{(g)}}{D_{x,t}^{(g)}}.
+$$
+
+We compute the temperature-attributable fractions $\theta^{(g)}_{x,t}$ for
+both women and men, and aggregate them over all ages to facilitate
+visualization on the figure below. The estimation error is calculated based 
+on `r nsim` replications of parametric bootstraps.
+
+```{r, echo=TRUE, fig.width=12, fig.height=6 , message=T, warning=T}
+
+# Run excess of mortality
+xs_mort <- lapply(names(daily_data), function(x){
+  res <- excess_mort_dlnm(daily_data[[x]], fit[[x]], q_range = c(q025, q975),
+                          nsim = nsim, parallel = parallel, ncpus = ncpus)
+  return(res)
+  })
+names(xs_mort) <- names(daily_data)
+
+# arrange data
+xs_data <- lapply(names(xs_mort), function(i){
+  xs_mort[[i]]$excess_mort %>%
+    dplyr::mutate(gender = i) %>%
+    rename(year = years)
+})
+xs_data <- do.call("rbind", xs_data)
+
+# print attributable fractions
+summary_temp_effect(xs_data)
+```
+
+# The Li-Lee model
+
+We decomposition the number of deaths into two components
+$$
+D_{x,t}^{(g)} = \widetilde{D}_{x,t}^{(g)} + \bar{D}_{x,t}^{(g)} \Rightarrow 
+\widehat{m}_{x,t}^{(g)} = \widetilde{m}_{x,t}^{(g)} + \bar{m}_{x,t}^{(g)}
+$$
+where $\widetilde{D}_{x,t}^{(g)}$ and $\bar{D}_{x,t}^{(g)}$ are respectively
+the number of deaths without and with considering temperature effects.
+
+Then, we consider the two-populations @li_coherent_2005 model for central deaths 
+rates without temperature effects 
+$$
+\ln ~ \widetilde{m}_{x,t}^{\left(g\right)} = A_x + B_{x}K_{t} + \alpha_{x}^{\left( g \right)} + \beta_{x}^{\left( g \right)} \kappa_{t}^{\left( g \right)}.
+$$		
+We use the following specifications:
+
+   - **Identifiability constraints**
+   
+$$
+		\sum\limits_{t \in \mathcal{T}} K_{t} = 0 \text{ and } \sum\limits_{x \in \mathcal{X}} 
+		B_{x}^2 = 1,
+$$
+$$
+	  \sum\limits_{t \in \mathcal{T}_y} \kappa_{t}^{\left( g \right)} = 0  \text{ and } 
+		\sum\limits_{x \in \mathcal{X}} (\beta_{x}^{\left( g \right)})^2 = 1,
+		\text{ for } g \in \mathcal{G}.
+$$
+
+  - **Time series model with coherence assumption**
+  
+$$
+K_{t} = \delta + K_{t-1} + e_{t} \;\; (\text{RWD with drift})
+$$
+$$
+\kappa_{t}^{\left( g \right)} = c^{\left( g \right)} + \phi^{\left( g \right)}
+\kappa_{t-1}^{\left( g \right)} + r_{t}^{\left( g \right)} \;\;
+(\text{AR(1) with drift and } \vert \phi^{(g)} \vert <1).
+$$
+Errors terms are white noises with a mean of zero and a variance-covariance 
+matrix $\Sigmavec$.
+
+## Fitting the Poisson regression model 
+
+For calibrating the parameters $({A}_x, {B}_x, {K}_{t},
+{\alpha}_{x}^{(f)}, {\beta}_{x}^{(f)}, {\kappa}_{t}^{(f)},
+{\alpha}_{x}^{(m)}, {\beta}_{x}^{(m)}, {\kappa}_{t}^{(m)})$, we use a Poisson
+assumption for the number of virtual deaths as in @brouhns02
+
+$$
+\widetilde{D}_{x,t}^{(g)} \sim \text{Pois}\left( E_{x,t}^{(g)} \exp{\left( \widetilde{m}_{x,t}^{(g)}\right) }\right).
+$$	
+Thus,	with  the attributable fraction $\theta^{(g)}_{x,t}$, we also have a 
+Poisson formulation with log-link function for the overall number of deaths
+$$
+{D}_{x,t}^{(g)} \sim \text{Pois}\left( E_{x,t}^{(g)} T_{x,t}^{(g)} \exp{\left( \widetilde{m}_{x,t}^{(g)}\right)}\right),
+$$
+where $T_{x,t}^ {(g)} = \exp{\left( \bar{m}_{x,t}^{(g)}\right)} = 1 + \theta^{(g)}_{x,t}$,
+can be seen as an offset term.
+
+### Calculating the offset term based on the attributable fraction
+
+First, we define the mortality model hyper-parameters,i.e. the age range, the
+observation period, and the name of each group.
+
+```{r, echo=TRUE, message=FALSE, warning=FALSE}
+xv <- 0:105
+yv <- 1980:2019
+countries <- c("FRATNP")
+group <- c("Female", "Male", "Total")
+```
+
+Then, we select `all_effect` (all the effects of temperatures over the year)
+and assume that the offset term $T_{x,t}^{(g)}$ is constant for all ages
+in each bucket.
+
+```{r, echo=TRUE, fig.width=12, fig.height=8 , message=F, warning=F}
+# Data for women and men
+xs_data <- get(load(file =  paste0(fold_data, "/xs_data.RData")))
+
+xs_f <- xs_data %>% 
+  dplyr::filter(gender == "f", temp_effect  == "all_effect") %>%
+  dplyr::select(year, age_bk, attrib_frac)
+
+xs_m <- xs_data %>% 
+  dplyr::filter(gender == "m", temp_effect  == "all_effect") %>%
+  dplyr::select(year, age_bk, attrib_frac)
+
+# Transformation to matrix
+transf_attrib_matrix <- function(df){
+  mat <- matrix(data = 1, ncol = length(xv), nrow = length(yv))
+  for(tt in yv){
+    mat[tt - yv[1] + 1, 1:65] <- dplyr::filter(df, year == tt,
+                                               age_bk == "0-64")$attrib_frac
+    mat[tt - yv[1] + 1, 66:75] <- dplyr::filter(df, year == tt,
+                                                age_bk == "65-74")$attrib_frac
+    mat[tt - yv[1] + 1, 76:85] <- dplyr::filter(df, year == tt,
+                                                age_bk == "75-84")$attrib_frac
+    mat[tt - yv[1] + 1, 86:(max(xv) + 1)] <- dplyr::filter(
+      df, year == tt, age_bk == "85+")$attrib_frac
+  }
+dimnames(mat) <- list(yv, xv)
+return(mat)
+}
+
+xs_f <- transf_attrib_matrix(xs_f)
+xs_m <- transf_attrib_matrix(xs_m)
+```
+
+### Adjusting exposure to risk
+
+Now, we multiply the offset term $T_{x,t}^{(g)}$ by the exposures to risk. 
+Subsequently, we construct a new dataset that we will use to fit the Li-Lee model.
+
+```{r, echo=TRUE, fig.width=12, fig.height=8 , message=T, warning=T}
+# Create datasets for deaths with ajusted exposure
+adj_mort_dt <- list(
+  UNI = list(
+    f = list(dtx = round(mort_dt$UNI$f$dtx),
+             etx = mort_dt$UNI$f$etx * (1 + xs_f),
+             wa = mort_dt$UNI$f$wa),
+    m = list(dtx = round(mort_dt$UNI$m$dtx),
+             etx = mort_dt$UNI$m$etx * (1 + xs_m),
+             wa = mort_dt$UNI$m$wa)),
+  ALL = list(dtx = mort_dt$ALL$dtx,
+             etx = mort_dt$ALL$etx,
+             wa = mort_dt$ALL$wa)
+)
+## replace exposure to adjusted exposure
+adj_mort_dt$ALL$etx <- adj_mort_dt$UNI$f$etx + adj_mort_dt$UNI$m$etx
+```
+
+### Model calibration
+
+We calibrate the parameters $({A}_x, {B}_x, {K}_{t},
+{\alpha}_{x}^{(f)}, {\beta}_{x}^{(f)}, {\kappa}_{t}^{(f)},
+{\alpha}_{x}^{(m)}, {\beta}_{x}^{(m)}, {\kappa}_{t}^{(m)})$
+of the Li-Lee model using both observed and adjusted exposures to risk.
+This allows to assess the impact of temperature-attributable deaths on these
+estimated parameters.
+
+These models are estimated by maximizing the Poisson log-likelihood. As 
+detailed in the paper, our procedure consists in two steps. First, we estimate
+the common parameters $({A}_x, {B}_x, {K}_{t})$,  followed by the estimation
+of sex-specific parameters. This estimation is performed 
+using the `R`-package **MultiMoMo** [@antonio_multimomo_2022].
+
+```{r, eval = TRUE}
+# Models with observed exposure to risk
+fit_M <- fit_li_lee(xv, yv, yv, "m", data = mort_dt, method = "NR",
+                    Ax = TRUE, exclude_coh = FALSE)
+fit_F <- fit_li_lee(xv, yv, yv, "f", data = mort_dt, method = "NR",
+                    Ax = TRUE, exclude_coh = FALSE)
+```
+
+```{r, eval = TRUE}
+# Models with adjusted exposure to risk
+adj_fit_M <- fit_li_lee(xv, yv, yv, "m", data = adj_mort_dt, method = "NR",
+                        Ax = TRUE, exclude_coh = FALSE)
+adj_fit_F <- fit_li_lee(xv, yv, yv, "f", data = adj_mort_dt, method = "NR",
+                        Ax = TRUE, exclude_coh = FALSE)
+```
+
+The calibrated parameters are displayed as follow.
+
+```{r, fig.width=12, fig.height=12 }
+list_fit <- list(fit_F = fit_F,
+                 fit_M = fit_M,
+                 virt_fit_F = adj_fit_F,
+                 virt_fit_M = adj_fit_M)
+# print figures
+myplot_parameters_li_lee(xv, yv, list_fit)
+```
+
+### Goodness of fit
+
+We now display residuals for the model with exposures adjusted of temperature 
+effects (model with original exposure provides similar results).
+
+```{r, fig.width=12, fig.height=4}
+fig_res_f <- plot_residuals_li_lee(xv, yv, adj_fit_F, "FR", "Female")
+fig_res_m <- plot_residuals_li_lee(xv, yv, adj_fit_M, "FR", "Male")
+
+plot_grid(fig_res_f + ggtitle("Females"), 
+          fig_res_m + ggtitle('Males'),
+          label_size = 12)
+```
+
+## Calibrating and forecasting the time series model 
+
+In this section, we focus on calibrating the time series model, rewritten in matrix 
+form as
+$$
+\Yvec_{t} = \dvec + \Phivec  \Yvec_{t-1} + \Evec_t,
+$$
+where
+$$
+\Yvec_{t} = \begin{pmatrix} K_t \\ \kappa_t^{(f)} \\ \kappa_t^{(m)} \end{pmatrix},  \dvec = \begin{pmatrix} \delta \\ c^{(f)} \\ c^{(m)} \end{pmatrix},
+\Phivec = \begin{pmatrix}
+1 & 0 & 0\\
+0 & \phi^{(f)}  & 0\\
+0 & 0  & \phi^{(m)}\\
+\end{pmatrix} \text{ and }
+\Evec_t = \begin{pmatrix} e_t \\ r_t^{(f)} \\ r_t^{(m)} \end{pmatrix}.
+$$
+
+We calibrate this model using two sets of parameters for $\Yvec_{t}$, i.e. 
+the parameters obtained with the observed risk exposures and those obtained 
+with the risk exposures adjusted for the effect of temperatures. These 
+parameters are also estimated through maximum likelihood using `R`-package 
+**MultiMoMo**. 
+
+### Specification
+
+We consider the projection period from the last year of the calibration set to
+$H$, the projection horizon. 
+
+```{r}
+## Forecasting Parameters
+arima_spec <- list(K.t_M = "RWD", k.t_M = "AR1.1", k.t_F = "AR1.1")
+n_ahead    <- length(start_year:end_year)
+n_sim      <- nsim
+est_method <- "PORT"
+```
+
+### Calibration and projection
+
+In this section, we estimate the parameters 
+$\widehat{D}$, $\widehat{\Phi}$, and $\widehat{\Sigmavec}$. Then, we forecast
+$\Yvec_t$ by simulating the innovation errors $\Evec_t$ from a multivariate
+Gaussian vector with zero mean and covariance matrix $\widehat{\Sigmavec}$.
+In this application, `r n_sim` Monte Carlo simulations is considered.
+
+```{r}
+set.seed(1234)
+# Model with original exposures
+proj_par <- project_parameters(fit_M, fit_F, n_ahead, n_sim,
+                               arima_spec, est_method)
+# Model with adjusted exposures
+adj_proj_par <- project_parameters(adj_fit_M, adj_fit_F, n_ahead, n_sim,
+                                   arima_spec, est_method)
+```
+
+We verify that the series modeled by an AR(1) process are stationary, i.e.
+parameter estimates $\widehat{k}_t^{(g)}$ are smaller than 1.
+
+```{r}
+tab_param <- data.frame(
+  v1 = c("Without temp. effects", "With temp. effects"),
+  v2 = c(proj_par$coef_KtM, adj_proj_par$coef_KtM),
+  v3 = c(proj_par$coef_ktM[1], adj_proj_par$coef_ktM[1]),
+  v4 = c(proj_par$coef_ktM[2], adj_proj_par$coef_ktM[2]),
+  v5 = c(proj_par$coef_ktF[1], adj_proj_par$coef_ktF[1]),
+  v6 = c(proj_par$coef_ktF[2], adj_proj_par$coef_ktF[2])
+)
+# Print table
+tab_param %>%
+  kbl( booktabs = T,
+       align='c',
+       col.names = c("Calibration data", "$\\delta$",
+                     "$c^{(m)}$", "$\\phi^{(m)}$",
+                     "$c^{(f)}$", "$\\phi^{(f)}$"),
+       digits=4, 
+       escape =  FALSE) %>%
+  kable_classic_2(full_width = F) %>%
+  kable_styling(latex_options = "hold_position",  font_size = 8)
+```
+
+The estimated covariance matrix $\boldsymbol{C}$ is given as follow.
+
+```{r}
+# Create correction matrix
+corr_function <- function(S)
+  {
+    D <- diag(sqrt(diag(S)))
+    Dinv <- solve(D)
+    R <- Dinv %*% S %*% Dinv
+    dimnames(R) <- dimnames(S)
+    R 
+  }
+
+# Show correction matrix in table
+tab_corr <- cbind(data.frame(corr_function(proj_par$cov_mat)), 
+                  data.frame(corr_function(adj_proj_par$cov_mat)))
+names(tab_corr) <- paste0("v", 1:ncol(tab_corr))
+row.names(tab_corr) <- NULL
+
+# Print table
+tab_corr %>%
+  dplyr::mutate(v = c("$e_t$", "$r_t^{(m)}$", "$r_t^{(f)}$"),
+                .before = "v1") %>%
+  kbl(booktabs = T,
+       align='c',
+       col.names = c("", "$e_t$", "$r_t^{(m)}$", "$r_t^{(f)}$",
+                     "$e_t$", "$r_t^{(m)}$", "$r_t^{(f)}$"),
+      digits=4, 
+      escape =  FALSE) %>%
+  add_header_above(c(" " = 1, "Without temp. effects" = 3,
+                     "With temp. effects" = 3)) %>%
+  kable_classic_2(full_width = F) %>%
+  kable_styling(latex_options = "hold_position",  font_size = 8)
+```
+
+### Projecting parameters
+
+We present the projection of parameters $\widehat{K}_t$, $\widehat{\kappa}_t^{(f)}$,
+and $\widehat{\kappa}_t^{(m)}$ over the period 2020-2100 with the $95\%$ prediction
+intervals. These projections are shown for both models with and without 
+temperature effects.
+
+```{r, fig.width=12, fig.height=4}
+p <- plot_kt_sim(proj_par, adj_proj_par, n_sim, yv[1], end_year)
+print(p)
+```
+
+# Multi-mortality and climate models
+
+Now that mortality rates excluding temperature effects can be projected,
+we focus on adding mortality shocks resulting from daily temperature variations.
+To achieve this, we consider a temperature trajectory derived from an external 
+climate model $(\vartheta_d)$, and then calculate the daily number of deaths
+attributed to temperature for each age $x$, sex $g$ and for any day $d$
+of the year $t$ using
+$$
+\bar{D}_{x,t,d}^{(g)} = \widetilde{D}_{x,t,d}^{(g)}  \left( \exp{\left(s(\vartheta_{d,t} ; L, \widehat{\thetavec}_k ) \right)} - 1 \right).
+$$
+We deduce the cumulative number of deaths over a subperiod 
+$D \subseteq D^{\star}$
+$$
+\bar{D}_{x,t}^{(g)} = \sum_{d \in D}{\bar{D}_{x,t,d}^{(g)}\mathbf{1}_{\left\lbrace d \in D\right\rbrace }}.
+$$
+The projected central mortality rates with temperature effects accumulated
+over period $D$ are 
+$$
+\widehat{m}_{x,t}^{(g)} = 
+ \widetilde{m}_{x,t}^{(g)} \left[ 1 + \overbrace{\sum_{d \in D}{\omega_{x,t,d}^{(g)} \left( \exp{\left(s(\vartheta_{d,t} ; L, \widehat{\thetavec}_k ) \right)} - 1 \right) \mathbf{1}_{\left\lbrace d \in D\right\rbrace }}}^{\theta_{x,t}^{(g)} (D)}\right],
+$$
+where $w_{x,t,d}^{(g)} =\widetilde{D}_{x,t,d}^{(g)}/\widetilde{D}_{x,t}^{(g)}$, a weight to be chosen, for the distribution of virtual deaths, e.g. $w_{x,t,d}^{(g)} = 1/D^\star$. 	
+
+## Projecting future mortality
+
+Now, we simulate the total mortality rates both with and without temperature effects
+$$
+q_{x,t}^{(g)} = 1 - \exp{\left(-\widehat{m}_{x,t}^{(g)}\right)},
+\widetilde{q}_{x,t}^{(g)} = 1 - \exp{\left(-\widetilde{m}_{x,t}^{(g)}\right)}, 
+$$
+
+For each simulation, we also compute the number of years of life expectancy lost
+(or gained) due to temperatures
+$$
+\Delta e_{x,t}^{(g)} = \int_{x}^{t_{\max}}{e^{- \int_{x}^{t}{\widetilde{\mu}_{x,u}^{(g)}du}}dt} 
+- \int_{x}^{t_{\max}}{e^{- \int_{x}^{t}{\mu_{x,u}^{(g)}du}}dt} 
+\approx \sum_{k=1}^{t_{\max}}{\left[
+\prod_{j=0}^{k-1}{\left(1-\widetilde{q}_{x,j}^{(g)}\right)}
+- \prod_{j=0}^{k-1}{\left(1-q_{x,j}^{(g)}\right)}
+\right]},
+$$
+with the force of mortality
+$\mu_{x,t}^{(g)} = \widetilde{\mu}_{x,t}^{(g)} + \bar{\mu}_{x,t}^{(g)}$.
+
+The first step is to simulate the total death rates derived from models
+calibrated on data, whether adjusted or not for deaths attributable to
+temperatures.
+
+```{r, eval = TRUE}
+## project mortality rates considering historical temperature effect 
+proj_rates <- project_mortality_rates(fit_M, fit_F, proj_par)
+
+## project mortality rates considering without temperature effect 
+adj_proj_rates <- project_mortality_rates(adj_fit_M, adj_fit_F, adj_proj_par)
+
+# reformat data
+format_rates <- function(rates)
+{
+  rates <- melt(rates)
+  names(rates) <- c("age", "year", "sim", "Qxt")
+  rates <- rates %>%
+    mutate(age_bk = cut(age, age_breaks, age_labels, include.lowest = T))
+}
+
+proj_rates <- lapply(proj_rates, format_rates)
+names(proj_rates) <- c("m", "f")
+
+adj_proj_rates <- lapply(adj_proj_rates, format_rates)
+names(adj_proj_rates) <- c("m", "f")
+```
+
+Next, we apply the projected additional mortality related to future temperature.
+Estimation errors related to the DLMN model is considered with `r nsim`
+bootstrap simulations.
+
+It is worth noting that it is also possible to simultaneously consider
+temperature simulations from multiple climate models to capture this source of
+uncertainty. However, we do not include this step in this Notebook to simplify
+the presentation. Implementing this approach is not difficult and
+is been discussed in the paper.
+
+```{r, echo=TRUE, eval = TRUE, fig.width=12, fig.height=8 , message=T, warning=T}
+
+# Change names dates
+clim_model <- clim_model %>% dplyr::rename(datedec = date)
+# Select the forecasting period
+sc <- dplyr::filter(clim_model, years %in% start_year:end_year)
+
+start_time <- Sys.time()
+# Run simulations for males and females
+res <- lapply(names(adj_proj_rates), function(x)
+{
+  # Select population
+  temp_dem <- adj_proj_rates[[x]] %>%
+    filter(year %in% start_year:end_year)
+  # Launch forecasting along the rcp scenario with simulations
+  # and parallelization
+  f_mort <- forecast_mort_dlnm(temp_dem, sc, fit[[x]],
+                               q_range = c(q025, q975),
+                               nsim = nsim, parallel = parallel,
+                               ncpus = ncpus)
+  # Add gender indexes
+  f_mort <- lapply(f_mort, function(tt){
+    if(is.null(tt))
+    {
+      return(tt)
+    } else{
+      return(
+        tt %>% 
+          dplyr::mutate(gender = x) %>%
+          relocate(gender, temp_effect, .before =  sim) 
+      )
+    }
+  })
+  return(f_mort)
+})
+
+# Merge more than two lists with the same element name
+res <- Reduce(function(...) Map("rbind", ...), res)
+
+# Save and printtime after operation
+end_time <- Sys.time()
+time_diff <- end_time - start_time
+print(paste("Run time:", as.numeric(time_diff, units = "mins"), "mins"))
+```
+
+## Dislaying attributable fraction
+
+In the following figures, we display the projected attributable fraction related
+to future temperatures in the selected climate scenario.
+
+To facilitate visual analysis, we calculate an aggregated attributable fraction
+to temperatures using the distribution of deaths known at the end of 2019,
+as follows
+$$
+\theta_{t}(D)  = \sum_{g \in \mathcal{G}}
+{
+\sum_{x \in \mathcal{X}}{\theta_{x,t}^{(g)} (D) \frac{D_{x, 2019}^{(g)}}{D_{2019}}
+}},
+$$
+
+
+```{r, eval = TRUE}
+# extract the last year 2019, for calculate exposure to risk
+expo <- do.call("rbind", lapply(mort_dt$UNI, function(dt){
+  dt <- dt$dtx[nrow(dt$dtx),  ]
+  return(data.frame(age = 0:105,
+                    w = dt,
+                    age_bk = c(rep("0-64", 65), rep("65-74", 10),
+                               rep("75-84", 10), rep("85+", 21))
+                    ))
+}))
+expo$gender <- c(rep("f", 106), rep("m", 106))
+# Agregate expo per age bucket
+W <- sum(expo$w)
+expo <- expo %>%
+  group_by(age_bk, gender) %>%
+  summarise(w = sum(w) / W)
+```
+
+
+```{r, fig.width=18, fig.height=12, warning= F, message= F}
+# Specify the RCP number
+res$tab_excess$traj_clim <- "ALADIN63_CNRM-CM5" 
+res$tab_excess$rcp <- "8.5" 
+plot_aff <- summary_forecast_temp_effect(res$tab_excess, expo)
+
+# Plot aggregate temperature attributed fraction 
+plot_aff[[1]]
+
+p.comb <- plot_aff[[2]] 
+
+# Plot temperature attributed fraction for each age group
+p.comb[[1]]
+p.comb[[2]]
+p.comb[[3]]
+p.comb[[4]]
+```
+
+## Assessing the loss in life expectancy
+
+Finally, we assess the loss in life expectancy due to future temperatures. 
+
+```{r, fig.width=18, fig.height=12, warning= F, message= F}
+res$tab_ex$traj_clim <- "ALADIN63_CNRM-CM5" 
+res$tab_ex$rcp <- "8.5" 
+plot_ev <- summary_forecast_ev_effect(res$tab_ex)
+
+# Plot LE including temperature effects
+plot_ev[[1]]
+
+# Plot lost in LE including temperature effects
+plot_ev[[2]]
+```
+
+
+# Conclusion
+
+This Notebook illustrates the implementation of a multi-population mortality
+model incorporating the effect of temperature changes on mortality. 
+The construction of this framework is simplified by omitting multiple scenarios
+and various climate models. Therefore, it does not exactly reproduce the results
+presented in the paper.
+
+# References
