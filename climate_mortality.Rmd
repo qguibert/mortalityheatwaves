@@ -189,7 +189,7 @@ min_level <- 18
 max_level <- 30
 
 # Monte-Carlo simulations
-nsim <- 20 # number of simulations
+nsim <- 1000 # number of simulations
 parallel <- "no" # parallel option
 ncpus <- 1L # number of cores
 
