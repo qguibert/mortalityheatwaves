@@ -5,10 +5,13 @@ summary_forecast_temp_effect <- function(afftab, dec_weight)
 {
   sub_palette <- c("black", "blue", "red", "lightblue", "orange")
 
+
+  # Modify attrib_frac to be homogeneous as the attributable fraction
+  afftab$attrib_frac <- afftab$attrib_frac / (1 + afftab$attrib_frac)
+
   # Aggregate results
     temp <- afftab %>%
       ungroup() %>%
-      dplyr::filter(sim %in% 1:15) %>%
       left_join(dec_weight, by = c("age_bk", "gender")) %>%
       dplyr::filter(temp_effect %in% c("all_effect",
                                        "moderate_hot_effect",

@@ -2,7 +2,7 @@
 title: "Impacts of Climate Change on Mortality: An extrapolation of temperature 
 effects based on time series data in France"
 author: "Quentin Guibert"
-date: "2024-07-15"
+date: "2024-09-26"
 header-includes:
   - \usepackage{amsmath,amsthm,amssymb,mathabx, bm, bbm, color}
   - \usepackage{dsfont}
@@ -462,7 +462,7 @@ We use the following specifications:
    - **Identifiability constraints**
    
 $$
-		\sum\limits_{t \in \mathcal{T}} K_{t} = 0 \text{ and } \sum\limits_{x \in \mathcal{X}} 
+		\sum\limits_{t \in \mathcal{T}_y} K_{t} = 0 \text{ and } \sum\limits_{x \in \mathcal{X}} 
 		B_{x}^2 = 1,
 $$
 $$
@@ -499,7 +499,7 @@ Poisson formulation with log-link function for the overall number of deaths
 $$
 {D}_{x,t}^{(g)} \sim \text{Pois}\left( E_{x,t}^{(g)} T_{x,t}^{(g)} \exp{\left( \widetilde{m}_{x,t}^{(g)}\right)}\right),
 $$
-where $T_{x,t}^ {(g)} = \exp{\left( \bar{m}_{x,t}^{(g)}\right)} = 1 + \theta^{(g)}_{x,t}$,
+where $T_{x,t}^ {(g)}  = (1 - \theta^{(g)}_{x,t})^{-1}$, 
 can be seen as an offset term.
 
 ### Calculating the offset term based on the attributable fraction
@@ -561,10 +561,10 @@ Subsequently, we construct a new dataset that we will use to fit the Li-Lee mode
 adj_mort_dt <- list(
   UNI = list(
     f = list(dtx = round(mort_dt$UNI$f$dtx),
-             etx = mort_dt$UNI$f$etx * (1 + xs_f),
+             etx = mort_dt$UNI$f$etx / (1 - xs_f),
              wa = mort_dt$UNI$f$wa),
     m = list(dtx = round(mort_dt$UNI$m$dtx),
-             etx = mort_dt$UNI$m$etx * (1 + xs_m),
+             etx = mort_dt$UNI$m$etx / (1 - xs_m),
              wa = mort_dt$UNI$m$wa)),
   ALL = list(dtx = mort_dt$ALL$dtx,
              etx = mort_dt$ALL$etx,
@@ -777,7 +777,7 @@ The projected central mortality rates with temperature effects accumulated
 over period $D$ are 
 $$
 \widehat{m}_{x,t}^{(g)} = 
- \widetilde{m}_{x,t}^{(g)} \left[ 1 + \overbrace{\sum_{d \in D}{\omega_{x,t,d}^{(g)} \left( \exp{\left(s(\vartheta_{d,t} ; L, \widehat{\thetavec}_k ) \right)} - 1 \right) \mathbf{1}_{\left\lbrace d \in D\right\rbrace }}}^{\theta_{x,t}^{(g)} (D)}\right],
+ \widetilde{m}_{x,t}^{(g)} \left[ 1 + \overbrace{\sum_{d \in D}{\omega_{x,t,d}^{(g)} \left( \exp{\left(s(\vartheta_{d,t} ; L, \widehat{\thetavec}_k ) \right)} - 1 \right) \mathbf{1}_{\left\lbrace d \in D\right\rbrace }}}^{\theta_{x,t}^{(g)} (D)/ (1 - \theta_{x,t}^{(g)} (D))} \right],
 $$
 where $w_{x,t,d}^{(g)} =\widetilde{D}_{x,t,d}^{(g)}/\widetilde{D}_{x,t}^{(g)}$, a weight to be chosen, for the distribution of virtual deaths, e.g. $w_{x,t,d}^{(g)} = 1/D^\star$. 	
 
@@ -785,7 +785,7 @@ where $w_{x,t,d}^{(g)} =\widetilde{D}_{x,t,d}^{(g)}/\widetilde{D}_{x,t}^{(g)}$, 
 
 Now, we simulate the total mortality rates both with and without temperature effects
 $$
-q_{x,t}^{(g)} = 1 - \exp{\left(-\widehat{m}_{x,t}^{(g)}\right)},
+q_{x,t}^{(g)} = 1 - \exp{\left(-\widehat{m}_{x,t}^{(g)}\right)}, \quad
 \widetilde{q}_{x,t}^{(g)} = 1 - \exp{\left(-\widetilde{m}_{x,t}^{(g)}\right)}, 
 $$
 
