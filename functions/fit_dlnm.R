@@ -139,3 +139,22 @@ fit_dlnm <- function(data, param_dlnm, per_age = T, summer = F, psi = NULL,
   }
   return(list_model)
 }
+
+
+# Q-AIC FUNCTION
+# source : https://github.com/gasparrini/2017_gasparrini_Biomet_Rcodedata/blob/master
+fqaic <- function(model) {
+  loglik <- sum(dpois(model$y,model$fitted.values,log=TRUE))
+  phi <- summary(model)$dispersion
+  qaic <- -2*loglik + 2*summary(model)$df[3]*phi
+  return(qaic)
+}
+
+fqbic <- function(model) {
+  loglik <- sum(dpois(model$y,model$fitted.values,log=TRUE))
+  phi <- summary(model)$dispersion
+  n <- length(model$fitted.values)
+  qbic <- -2*loglik + log(n)*summary(model)$df[3]*phi
+  return(qbic)
+}
+
