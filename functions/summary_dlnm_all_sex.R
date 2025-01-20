@@ -1,6 +1,6 @@
-###################################
-#'summary_dlnm_all_sex
-###################################
+#----------------------------------------------------------
+#  summary_dlnm_all_sex
+#----------------------------------------------------------
 summary_dlnm_all_sex <- function(obj)
 {
   if(! is(obj, "list"))
@@ -33,22 +33,22 @@ summary_dlnm_all_sex <- function(obj)
   RRplot <- ggplot(pred) +
     geom_line(aes(x = temp, y = rr, colour = sex), linewidth = 1.2) +
     geom_ribbon(aes(x = temp, ymin = rrlow, ymax = rrhigh, fill = sex), alpha = 0.3) +
-    geom_vline(
-      xintercept = quantile(obj[[1]][[1]]$model$data$tavg, 0.99, na.rm = T),
-      linetype = "dashed", color = "red", linewidth = 1
-    ) +
-    geom_vline(
-      xintercept = quantile(obj[[1]][[1]]$model$data$tavg, 0.95, na.rm = T),
-      linetype = "dashed", color = "orange",linewidth = 1
-    ) +
-    geom_vline(
-      xintercept = quantile(obj[[1]][[1]]$model$data$tavg, 0.05, na.rm = T),
-      linetype = "dashed", color = "cyan", linewidth = 1
-    ) +
-    geom_vline(
-      xintercept = quantile(obj[[1]][[1]]$model$data$tavg, 0.01, na.rm = T),
-      linetype = "dashed", color = "blue", linewidth = 1
-    ) +
+    # geom_vline(
+    #   xintercept = quantile(obj[[1]][[1]]$model$data$tavg, 0.99, na.rm = T),
+    #   linetype = "dashed", color = "red", linewidth = 1
+    # ) +
+    # geom_vline(
+    #   xintercept = quantile(obj[[1]][[1]]$model$data$tavg, 0.95, na.rm = T),
+    #   linetype = "dashed", color = "orange",linewidth = 1
+    # ) +
+    # geom_vline(
+    #   xintercept = quantile(obj[[1]][[1]]$model$data$tavg, 0.05, na.rm = T),
+    #   linetype = "dashed", color = "cyan", linewidth = 1
+    # ) +
+    # geom_vline(
+    #   xintercept = quantile(obj[[1]][[1]]$model$data$tavg, 0.01, na.rm = T),
+    #   linetype = "dashed", color = "blue", linewidth = 1
+    # ) +
     geom_hline(
       yintercept = 1,
       linetype = "solid", color = "grey40"
