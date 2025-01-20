@@ -4,8 +4,8 @@ myplot_parameters_li_lee <- function(xv, yv, list_fit)
   # get model results
   fit_M <- list_fit$fit_M
   fit_F <- list_fit$fit_F
-  virt_fit_M <- list_fit$virt_fit_M
-  virt_fit_F <- list_fit$virt_fit_F
+  adj_fit_M <- list_fit$adj_fit_M
+  adj_fit_F <- list_fit$adj_fit_F
 
   if (length(fit_M$k.t) != length(yv))
     stop("The vector yv should have the same length as the length of the time series k.t.")
@@ -46,10 +46,10 @@ myplot_parameters_li_lee <- function(xv, yv, list_fit)
   # Loop for common and females
   for (t in 1:6){
     df <- data.frame("x" = xrange[[t]], "y" = fit_F[[param_names[[t]]]],
-                     "var" = "Without temp. effects")
-    df_virt <- data.frame("x" = xrange[[t]], "y" = virt_fit_F[[param_names[[t]]]],
-                          "var" = "With temp. effects")
-    df <- rbind(df, df_virt)
+                     "var" = "Original Li-Lee model")
+    df_adj <- data.frame("x" = xrange[[t]], "y" = adj_fit_F[[param_names[[t]]]],
+                          "var" = "Adjusted exposure to risk")
+    df <- rbind(df, df_adj)
     plots[[t]] <- ggplot(df) +
       geom_line(mapping = aes(x = x, y = y, col = var, linetype = var)) +
       xlab(sxlab[t]) + ylab("") + theme_bw(base_size = 15) + ggtitle(smain[[t]]) +
@@ -60,10 +60,10 @@ myplot_parameters_li_lee <- function(xv, yv, list_fit)
   # Loop for males
   for (t in 7:9){
     df <- data.frame("x" = xrange[[t]], "y" = fit_M[[param_names[[t]]]],
-                     "var" = "Without temp. effects")
-    df_virt <- data.frame("x" = xrange[[t]], "y" = virt_fit_M[[param_names[[t]]]],
-                          "var" = "With temp. effects")
-    df <- rbind(df, df_virt)
+                     "var" = "Original Li-Lee model")
+    df_adj <- data.frame("x" = xrange[[t]], "y" = adj_fit_M[[param_names[[t]]]],
+                          "var" = "Adjusted exposure to risk")
+    df <- rbind(df, df_adj)
     plots[[t]] <- ggplot(df) +
       geom_line(mapping = aes(x = x, y = y, col = var, linetype = var)) +
       xlab(sxlab[t]) + ylab("") + theme_bw(base_size = 15) + ggtitle(smain[[t]]) +

@@ -1,10 +1,10 @@
-plot_kt_sim <- function(proj_par, virt_proj_par, n_sim, annee_deb, end_year)
+plot_kt_sim <- function(proj_par, adj_proj_par, n_sim, annee_deb, end_year)
 {
 
   # select trend
   name_trend <- c("K.t_M", "k.t_M", "k.t_F")
 
-  # Transform data for the model without temp. effects
+  # Transform data for the original Li-Lee model
   tab_par <- lapply(c(name_trend), function(x)
   {
     tab <- as_tibble(t(proj_par[[x]])) %>%
@@ -14,26 +14,26 @@ plot_kt_sim <- function(proj_par, virt_proj_par, n_sim, annee_deb, end_year)
     tab <- tab %>% tidyr::pivot_longer(cols = -sim,
                                        names_to = "year",
                                        values_to = "trend") %>%
-      mutate(trend_name = x, model = "Without temp. effects")
+      mutate(trend_name = x, model = "Original Li-Lee model")
   })
   tab_par <- do.call("rbind", tab_par)
 
-  # Transform data for the model with temp. effects
-  tab_virt_par <- lapply(c(name_trend), function(x)
+  # Transform data for the Li-Lee model with adjusted exposure to risk
+  tab_adj_par <- lapply(c(name_trend), function(x)
   {
-    tab <- as_tibble(t(virt_proj_par[[x]])) %>%
+    tab <- as_tibble(t(adj_proj_par[[x]])) %>%
       mutate(sim = 1:n_sim) %>%
       relocate(sim)
     names(tab) <- c("sim", annee_deb:end_year)
     tab <- tab %>% tidyr::pivot_longer(cols = -sim,
                                        names_to = "year",
                                        values_to = "trend") %>%
-      mutate(trend_name = x, model = "With temp. effects")
+      mutate(trend_name = x, model = "Adjusted exposure to risk")
   })
-  tab_virt_par <- do.call("rbind", tab_virt_par)
+  tab_adj_par <- do.call("rbind", tab_adj_par)
 
   # Merge datesets
-  tab <- rbind(tab_par, tab_virt_par)
+  tab <- rbind(tab_par, tab_adj_par)
   tab$trend_name <- as.factor(tab$trend_name)
   levels(tab$trend_name) <- c("kappa[t]^(f)", "kappa[t]^(m)", "K[t]")
 
