@@ -28,31 +28,28 @@ perf_dnlm <- function(model)
       dem <- temp_model$model$data
     }
     # Get the basis to predict
-    bvar <- do.call(onebasis, c(list(x = dem$tavg), temp_model$argvar))
-    cenvec <- do.call(onebasis, c(list(x = temp_model$cen), temp_model$argvar))
-    bvarcen <- scale(bvar, center=cenvec, scale = F)
-    newdata <- cbind(dem, bvar)
+    # bvar <- do.call(onebasis, c(list(x = dem$tavg), temp_model$argvar))
+    # cenvec <- do.call(onebasis, c(list(x = temp_model$cen), temp_model$argvar))
+    # bvarcen <- scale(bvar, center=cenvec, scale = F)
+    # newdata <- cbind(dem, bvar)
 
-    # Alternative for checking function
-    argvar_attrdl <- temp_model$argvar
-    argvar_attrdl$x <- dem$tavg
-    cb <- crossbasis(dem$tavg, lag = temp_model$lag, argvar = temp_model$argvar,
-                     arglag = temp_model$arglag)
-    an <- attrdl(dem$tavg, cb, newdata$nb_deaths, coef = temp_model$coef,
-                  vcov=temp_model$vcov, type="an", dir="forw",
-                 cen = temp_model$cen, tot = F)
+    # Alternative attributable risk proposed in  http://www.biomedcentral.com/1471-2288/14/55
+    newdata  <- dem
+    cb <- crossbasis(dem$tavg, lag = temp_model$lag,
+                     argvar = temp_model$argvar, arglag = temp_model$arglag)
+    an <- attrdl(x = dem$tavg, basis = cb, cases = newdata$nb_deaths,
+                 model = temp_model$model, dir="forw",
+                 cen=temp_model$cen, tot = F)$an
 
     # merge date, prediction and residuals
     temp <- dem %>%
       mutate(datedec = dem$datedec,
              years = year(datedec),
              pred = predict.glm(temp_model$model,newdata, "response"),
-             Dxtd_xs = (1-exp(-bvarcen %*% temp_model$coef)) * newdata$nb_deaths,
-             Dxtd_xs_ck = an) %>%
+             Dxtd_xs = an) %>%
       mutate(dev.residual = residuals(temp_model$model, type ="deviance")) %>% # add residuals
       drop_na() %>% # Remove not predicted value due to the lag
-      dplyr::select(years, datedec, age_bk, nb_deaths, pred, dev.residual,
-                    Dxtd_xs, Dxtd_xs_ck) %>%
+      dplyr::select(years, datedec, age_bk, nb_deaths, pred, dev.residual, Dxtd_xs) %>%
       rename(Dxtd = nb_deaths,
              Dxtd_pred = pred)
     return(temp)
@@ -61,15 +58,13 @@ perf_dnlm <- function(model)
   # Aggregated results
   res_agg <- res %>%
     group_by(datedec, age_bk) %>%
-    summarise(Dxtd =sum(Dxtd), Dxtd_pred = sum(Dxtd_pred),
-              Dxtd_xs = sum(Dxtd_xs), Dxtd_xs_ck = sum(Dxtd_xs_ck)) %>%
+    summarise(Dxtd =sum(Dxtd), Dxtd_pred = sum(Dxtd_pred), Dxtd_xs = sum(Dxtd_xs)) %>%
     mutate(year = year(datedec))
 
   # Aggregate by years and age bk
   res_agg_year <- res %>%
     group_by(years, age_bk) %>%
-    summarise(Dxt = sum(Dxtd), Dxt_pred = sum(Dxtd_pred), Dxt_xs = sum(Dxtd_xs),
-              Dxt_xs_ck = sum(Dxtd_xs_ck)) %>%
+    summarise(Dxt = sum(Dxtd), Dxt_pred = sum(Dxtd_pred), Dxt_xs = sum(Dxtd_xs)) %>%
     mutate(attrib_frac = Dxt_xs / Dxt)
 
   # Aggregate age bk
@@ -79,7 +74,7 @@ perf_dnlm <- function(model)
     summarise(Dxt = sum(Dxt), Dxt_pred = sum(Dxt_pred), Dxt_xs = sum(Dxt_xs)) %>%
     mutate(attrib_frac = Dxt_xs / Dxt)
 
-  table_res_mean <- kableExtra::kable(res_mean, booktabs = TRUE) %>%
+  table_res_mean <- kableExtra::kable(res_mean, booktabs=TRUE) %>%
     kable_classic_2(full_width = F)
 
   # Figure with obs vs. pred
@@ -98,13 +93,38 @@ perf_dnlm <- function(model)
                             "Oct." = "10",
                             "Nov." = "11",
                             "Dec." = "12")
+
+  p_desc_1 <- ggplot(res) +
+    geom_point(aes(x = datedec, y = Dxtd), size = 0.5, col = "grey") +
+    geom_line(aes(x = datedec, y = Dxtd_pred), size = 1) +
+    facet_wrap(~ age_bk) +
+    xlab("Year") + ylab("Number of daily deaths") +
+    theme_bw() +
+    theme(legend.position = "none",
+          strip.background = element_rect(fill = "white", color = NA),
+          strip.text = element_text(color = "black"),
+          panel.border = element_rect(color = "black", fill = NA),
+          text = element_text(size = 12))
+
+  p_desc_2 <- ggplot(res) +
+    geom_line(aes(x = datedec, y = Dxtd_xs), size = 0.5, col = "red") +
+    geom_line(aes(x = datedec, y = Dxtd_pred - Dxtd_xs), size = 0.5) +
+    facet_wrap(~ age_bk) +
+    xlab("Year") + ylab("Predicted number of daily deaths") +
+    theme_bw() +
+    theme(legend.position = "none",
+          strip.background = element_rect(fill = "white", color = NA),
+          strip.text = element_text(color = "black"),
+          panel.border = element_rect(color = "black", fill = NA),
+          text = element_text(size = 12))
+
   p_perf <- res_agg %>%
     #create year buckets
     mutate(year_bk = cut(year, year_breaks, year_labels, include.lowest = T)) %>%
     group_by(year_bk, month) %>%
     ggplot() +
-    geom_violin(aes(x = month, y = Dxtd , fill = "Observed"), alpha = 0.5) +
-    geom_violin(aes(x = month, y = Dxtd_pred, fill = "Predicted"), alpha = 0.5) +
+    geom_violin(aes(x = month, y = Dxtd , fill = "Observed"), alpha = 0.5, trim = FALSE) +
+    geom_violin(aes(x = month, y = Dxtd_pred, fill = "Predicted"), alpha = 0.5, trim = FALSE) +
     facet_wrap(~ year_bk, scales = "free_x", ncol = 2) +
     xlab("Months") + ylab("Number of daily deaths") +
     scale_fill_manual(values = c("blue", "green")) +
@@ -116,7 +136,8 @@ perf_dnlm <- function(model)
           text = element_text(size = 12))
 
   p_resid <- ggplot(data = res) +
-    geom_point(aes(x = datedec, y =  dev.residual), size = 0.5) +
+    geom_point(aes(x = datedec, y =  dev.residual), size = 0.5, col = "grey",) +
+    geom_smooth(aes(x = datedec, y =  dev.residual),  size = 1) +
     facet_wrap(~ age_bk) +
     xlab("Year") + ylab("Deviance residuals") +
     geom_hline(yintercept= -2, linetype="dashed", color = "black") +
@@ -130,6 +151,8 @@ perf_dnlm <- function(model)
           text = element_text(size = 12))
 
   return(list(perf = p_perf,
+              desc_1 = p_desc_1,
+              desc_2 = p_desc_2,
               residual = p_resid,
               res_agg = res_agg,
               res_agg_year = res_agg_year,
