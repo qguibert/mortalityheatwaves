@@ -20,8 +20,10 @@ summary_temp_effect <- function(xs_data){
     mutate(gender = fct_recode(gender, "Females" = "f" ,
                                "Males" = "m")) %>%
     group_by(year, sim, temp_effect, gender) %>%
-    summarise(Dxt = sum(Dxt), Dxt_xs = sum(Dxt_xs)) %>%
-    mutate(xs_rate = Dxt_xs / Dxt * 100) %>%
+    summarise(Dxt = sum(Dxt),
+              an_sum_all_ages = sum(an_sum),
+              cases_sum_all_ages = sum(cases_sum)) %>%
+    mutate(xs_rate = an_sum_all_ages / cases_sum_all_ages * 100) %>%
     group_by(year, temp_effect, gender) %>%
     summarise(xsmean = mean(xs_rate),
               xsmax = quantile(xs_rate, 0.95),
