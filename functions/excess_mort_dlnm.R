@@ -8,7 +8,8 @@
 #' @param parallel type of parallelization
 #' @param ncpus number of cores to use
 ###################################
-excess_mort_dlnm <- function(data_hist, model, q_range = NULL, nsim = 1, parallel = c("no", "snow", "multicore"),
+excess_mort_dlnm <- function(data_hist, model, q_range = NULL,
+                             nsim = 1, parallel = c("no", "snow", "multicore"),
                              ncpus = 1)
 {
   #sanity check
@@ -71,13 +72,12 @@ excess_mort_dlnm <- function(data_hist, model, q_range = NULL, nsim = 1, paralle
     # Configure different samples for each effect of temperature
     config_temp <-list(
       all_effect = dem %>% mutate(select_period = 1),
-      hot_effect = dem %>% mutate(select_period = 1 * (dem$TAVG >  temp_model$cen)),
-      cold_effect = dem %>% mutate(select_period = 1 * (dem$TAVG <  temp_model$cen)),
-      moderate_hot_effect = dem %>% mutate(select_period = 1 * (dem$TAVG >  temp_model$cen & dem$TAVG <  q_range[2])),
-      moderate_cold_effect = dem %>% mutate(select_period = 1 * (dem$TAVG <  temp_model$cen & dem$TAVG >  q_range[1])),
-      extr_hot_effect = dem %>% mutate(select_period = 1 * (dem$TAVG >  q_range[2])),
-      extr_cold_effect = dem %>% mutate(select_period = 1 * (dem$TAVG <  q_range[1])),
-      canicule_effect = dem %>% mutate(select_period = 1 * (dem$Ind_canicule == 1))
+      hot_effect = dem %>% mutate(select_period = 1 * (dem$tavg >  temp_model$cen)),
+      cold_effect = dem %>% mutate(select_period = 1 * (dem$tavg <  temp_model$cen)),
+      moderate_hot_effect = dem %>% mutate(select_period = 1 * (dem$tavg >  temp_model$cen & dem$tavg <  q_range[2])),
+      moderate_cold_effect = dem %>% mutate(select_period = 1 * (dem$tavg <  temp_model$cen & dem$tavg >  q_range[1])),
+      extr_hot_effect = dem %>% mutate(select_period = 1 * (dem$tavg >  q_range[2])),
+      extr_cold_effect = dem %>% mutate(select_period = 1 * (dem$tavg <  q_range[1]))
     )
 
     # Function for simulation temperature effects
@@ -90,16 +90,16 @@ excess_mort_dlnm <- function(data_hist, model, q_range = NULL, nsim = 1, paralle
         pred <- predict_attrib_dlnm(temp_model, newdata = df, coef_sim = coef_sim)$pred_effect
         # Agregate results on the populations
         df <- df %>%
-          dplyr::select(DateDec, age_bk)
+          dplyr::select(datedec, age_bk)
         pred <- pred %>%
-          left_join(y = df, by = c("DateDec")) %>%
-          rename(Dxtd = Nombre_de_deces) %>%
+          left_join(y = df, by = c("datedec")) %>%
+          rename(Dxtd = nb_deaths) %>%
           mutate(temp_effect = k)
         # Agregate by year to reduce size if nsim > 10
         if(nsim > 10)
         {
           pred <- pred %>%
-            group_by(YEARS, age_bk, temp_effect) %>%
+            group_by(years, age_bk, temp_effect) %>%
             summarise(
               Dxt = sum(Dxtd),
               an_sum = sum(an),
@@ -163,7 +163,7 @@ excess_mort_dlnm <- function(data_hist, model, q_range = NULL, nsim = 1, paralle
     res_mean = NULL
   } else {
     res_agg <- res %>%
-      group_by(YEARS, age_bk, temp_effect, sim) %>%
+      group_by(years, age_bk, temp_effect, sim) %>%
       summarise(Dxt = sum(Dxtd),
                 an_sum = sum(an),
                 cases_sum = sum(cases)) %>%

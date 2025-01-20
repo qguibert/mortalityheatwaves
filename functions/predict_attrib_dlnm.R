@@ -19,7 +19,7 @@ predict_attrib_dlnm <- function(model, newdata, coef_sim = F,  fast = F, sensi =
     stop("The class of 'newdata' should be 'data.frame'")
   }
 
-  if(! all(c("DateDec" , "TAVG", "select_period") %in% names(newdata)))
+  if(! all(c("datedec" , "tavg", "select_period") %in% names(newdata)))
   {
     stop("Check colnames of 'newdata' ")
   }
@@ -27,23 +27,23 @@ predict_attrib_dlnm <- function(model, newdata, coef_sim = F,  fast = F, sensi =
     stop("No period is selected")
   }
 
-  if(! c("Nombre_de_deces") %in% names(newdata))
+  if(! c("nb_deaths") %in% names(newdata))
   {
-    newdata$Nombre_de_deces <- 1
+    newdata$nb_deaths <- 1
   }
 
-  df <- newdata %>% dplyr::select(DateDec, YEARS, TAVG, Nombre_de_deces, select_period)
+  df <- newdata %>% dplyr::select(datedec, years, tavg, nb_deaths, select_period)
   df <- unique(df) # remove duplicated data
-  df <- df[order(df$DateDec), ] # order by date
+  df <- df[order(df$datedec), ] # order by date
   # COMPUTE THE DAILY CONTRIBUTIONS OF ATTRIBUTABLE DEATHS
-  cb <- crossbasis(df$TAVG, lag = model$lag,
+  cb <- crossbasis(df$tavg, lag = model$lag,
                    argvar = model$argvar, arglag = model$arglag)
   # applied range of temperature
-  temperature_select <- df$TAVG
+  temperature_select <- df$tavg
   if(length(which(df$select_period == 0)) >0)
     temperature_select[df$select_period == 0] <- model$cen + sensi
   # Compute daily attributable number of deaths
-  attr_comp <- attrdl(x = temperature_select, basis = cb, cases = df$Nombre_de_deces,
+  attr_comp <- attrdl(x = temperature_select, basis = cb, cases = df$nb_deaths,
                model = model$model, dir= "forw",
                cen = model$cen + sensi, tot = F,
                range = NULL, sim = coef_sim, nsim = 1)
@@ -71,9 +71,9 @@ predict_attrib_dlnm <- function(model, newdata, coef_sim = F,  fast = F, sensi =
   } else
   {
     df_agg <- df %>%
-      group_by(YEARS) %>%
+      group_by(years) %>%
       summarise(an_sum = sum(an),
-                nb_deaths = sum(Nombre_de_deces),
+                nb_deaths = sum(nb_deaths),
                 cases_sum = sum(cases))
     df_agg <- df_agg %>%
       mutate(af_year = an_sum / cases_sum,
