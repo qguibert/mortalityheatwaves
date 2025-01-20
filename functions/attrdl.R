@@ -1,6 +1,7 @@
 ###
-### (c) Antonio Gasparrini 2015-2017
-#
+### ADAPTED FROM FUNCTION DEVELOPED BY Antonio Gasparrini 2014
+# https://github.com/gasparrini/2014_gasparrini_BMCmrm_Rcodedata/blob/master/attrdl.R
+
 ################################################################################
 # FUNCTION FOR COMPUTING ATTRIBUTABLE MEASURES FROM DLNM
 #   REQUIRES dlnm VERSION 2.2.0 AND ON
@@ -14,7 +15,7 @@
 #   IT IS RESPONSIBILITY OF THE USER TO CHECK THE RELIABILITY OF THE RESULTS IN
 #   DIFFERENT APPLICATIONS.
 #
-# Version: 25 January 2017
+# Version developed by Antonio Gasparrini : 25 January 2017
 # AN UPDATED VERSION CAN BE FOUND AT:
 #   https://github.com/gasparrini/2014_gasparrini_BMCmrm_Rcodedata
 #
@@ -27,16 +28,15 @@
 #   - model: THE FITTED MODEL
 #   - coef, vcov: COEF AND VCOV FOR basis IF model IS NOT PROVIDED
 #   - model.link: LINK FUNCTION IF model IS NOT PROVIDED
-#   - type: EITHER "an" OR "af" FOR ATTRIBUTABLE NUMBER OR FRACTION
 #   - dir: EITHER "back" OR "forw" FOR BACKWARD OR FORWARD PERSPECTIVES
 #   - tot: IF TRUE, THE TOTAL ATTRIBUTABLE RISK IS COMPUTED
 #   - cen: THE REFERENCE VALUE USED AS COUNTERFACTUAL SCENARIO
 #   - range: THE RANGE OF EXPOSURE. IF NULL, THE WHOLE RANGE IS USED
-#   - sim: IF SIMULATION SAMPLES SHOULD BE RETURNED. ONLY FOR tot=TRUE
+#   - sim: IF SIMULATION SAMPLES SHOULD BE RETURNED.
 #   - nsim: NUMBER OF SIMULATION SAMPLES
 ################################################################################
 attrdl <- function(x,basis,cases,model=NULL,coef=NULL,vcov=NULL,model.link=NULL,
-  type="af",dir="back",tot=TRUE,cen,range=NULL,sim=FALSE,nsim=5000) {
+                   dir="back",tot=TRUE,cen,range=NULL,sim=FALSE,nsim=5000) {
 ################################################################################
 #
   # CHECK VERSION OF THE DLNM PACKAGE
@@ -45,7 +45,6 @@ attrdl <- function(x,basis,cases,model=NULL,coef=NULL,vcov=NULL,model.link=NULL,
 #
   # EXTRACT NAME AND CHECK type AND dir
   name <- deparse(substitute(basis))
-  type <- match.arg(type,c("an","af"))
   dir <- match.arg(dir,c("back","forw"))
 #
   # DEFINE CENTERING
@@ -69,7 +68,7 @@ attrdl <- function(x,basis,cases,model=NULL,coef=NULL,vcov=NULL,model.link=NULL,
     if(ncol(at <- x)!=diff(lag)+1)
       stop("dimension of 'x' not compatible with 'basis'")
   }
-#
+  #
   # NUMBER USED FOR THE CONTRIBUTION AT EACH TIME IN FORWARD TYPE
   #   - IF cases PROVIDED AS A MATRIX, TAKE THE ROW AVERAGE
   #   - IF PROVIDED AS A TIME SERIES, COMPUTE THE FORWARD MOVING AVERAGE
@@ -152,10 +151,6 @@ attrdl <- function(x,basis,cases,model=NULL,coef=NULL,vcov=NULL,model.link=NULL,
 ################################################################################
 #
   # EMPIRICAL CONFIDENCE INTERVALS
-  if(!tot && sim) {
-    sim <- FALSE
-    warning("simulation samples only returned for tot=T")
-  }
   if(sim) {
     # SAMPLE COEF
     k <- length(coef)
@@ -165,19 +160,24 @@ attrdl <- function(x,basis,cases,model=NULL,coef=NULL,vcov=NULL,model.link=NULL,
     # RUN THE LOOP
     # pre_afsim <- (1 - exp(- Xpredall %*% coefsim)) * cases # a matrix
     # afsim <- colSums(pre_afsim,na.rm=TRUE) / sum(cases[!isna],na.rm=TRUE)
+
+    # COMPUTE AF
     afsim <- apply(coefsim,2, function(coefi) {
-      ani <- (1-exp(-drop(Xpredall%*%coefi)))*cases
-      sum(ani[!is.na(ani)])/sum(cases[!is.na(ani)])
+      afi <- (1-exp(-drop(Xpredall%*%coefi)))
     })
-    ansim <- afsim*den
+    ansim <- afsim * cases
   }
 #
 ################################################################################
 #
   res <- if(sim) {
-    if(type=="an") ansim else afsim
+    list(af = afsim,
+         an = ansim,
+         cases = cases)
   } else {
-    if(type=="an") an else af
+    list(af = af,
+         an = an,
+         cases = cases)
   }
 #
   return(res)
