@@ -5,6 +5,9 @@
 #' @param dem_sc a data.frame containing simulated mortality rates per age
 #' @param temp_rcp a data.frame containing future temperatures
 #' @param model a object containing the fitted DLNM model
+#' @param weight a dataframe cointaining weight associated with the distribution
+#' of death counts unaffected by temperature. The weight are provided per age bucket,
+#' per day and month
 #' @param q_range a 2-dimensional vector with the thresholds related to
 #' extreme hot and extreme cold temperature
 #' @param sel_effect the temperature effects returned
@@ -13,11 +16,10 @@
 #' @param ncpus number of cores to use
 #' @param seed set the value of the seed
 ########################################
-
-forecast_mort_dlnm <- function(dem_sc, temp_rcp, model,
+forecast_mort_dlnm <- function(dem_sc, temp_rcp, model, weight,
                                q_range = NULL, age_qx = NULL, age_ex  = NULL ,
                                year_breaks = NULL, year_labels = NULL,
-                               sel_effect = c("all_effect", "extr_hot_effect"),
+                               sensi_cen = 0,
                                nsim = 1, parallel = c("no", "snow", "multicore"),
                                ncpus = 1, detail.result = F,
                                seed = 1234)
@@ -72,7 +74,7 @@ forecast_mort_dlnm <- function(dem_sc, temp_rcp, model,
   # calc life expectancy
   dem_sc <- life_exp_ts(dem_sc, calc_xs = FALSE)
 
-  # Step 1 - Extract list of models, demographic datasets and simulate coefficients
+  # Step 1 - Extract list of models, demographie datasets and simulate coefficients
    arg_simu <- lapply(1:n, function(x)
   {
     if(n > 1) # Model per age bucket
@@ -80,6 +82,7 @@ forecast_mort_dlnm <- function(dem_sc, temp_rcp, model,
       # Select model and people in the age bucket
       temp_model <- model[[x]]
       dem <- dem_sc %>% filter(age_bk == age_bucket[x])
+      temp_weight <- weight %>% filter(age_bk == age_bucket[x])
     } else
     {
       temp_model <- model
@@ -89,26 +92,28 @@ forecast_mort_dlnm <- function(dem_sc, temp_rcp, model,
     # Compute bootstrapped coefficients
     if (nsim == 1)
     {
-      coef_sim <- NULL
+      coef_sim <- FALSE
     } else
     {
       set.seed(seed)
-      coef_sim <- mvrnorm(nsim, temp_model$coef, temp_model$vcov)
+      coef_sim <- TRUE
     }
 
-    # Compute attributable fraction
-    ## Select different subperiods depending on the level of temperature
+    # Configure different samples for each effect of temperature
     config_temp <-list(
       all_effect = temp_rcp %>% mutate(select_period = 1) %>% dplyr::select(years, datedec, tavg, select_period),
       moderate_hot_effect = temp_rcp %>% mutate(select_period = 1 * (temp_rcp$tavg >  temp_model$cen & temp_rcp$tavg <  q_range[2])) %>% dplyr::select(years, datedec, tavg, select_period),
       moderate_cold_effect = temp_rcp %>% mutate(select_period = 1 * (temp_rcp$tavg <  temp_model$cen & temp_rcp$tavg >  q_range[1])) %>% dplyr::select(years, datedec, tavg, select_period),
-      extr_hot_effect = temp_rcp %>% mutate(select_period = 1 * (temp_rcp$tavg >=  q_range[2])) %>% dplyr::select(years, datedec, tavg, select_period),
-      extr_cold_effect = temp_rcp %>% mutate(select_period = 1 * (temp_rcp$tavg <=  q_range[1])) %>% dplyr::select(years, datedec, tavg, select_period)
+      extr_hot_effect = temp_rcp %>% mutate(select_period = 1 * (temp_rcp$tavg >=  q_range[2])) %>%
+        dplyr::select(years, datedec, tavg, select_period),
+      extr_cold_effect = temp_rcp %>% mutate(select_period = 1 * (temp_rcp$tavg <=  q_range[1])) %>%
+        dplyr::select(years, datedec, tavg, select_period)
     )
     return(list(
       temp_model = temp_model,
       dem = dem,
       coef_sim = coef_sim,
+      temp_weight= temp_weight,
       config_temp = config_temp
     ))
   })
@@ -124,12 +129,10 @@ forecast_mort_dlnm <- function(dem_sc, temp_rcp, model,
       dem <- arg_simu[[x]]$dem
       coef_sim <- arg_simu[[x]]$coef_sim
       config_temp <- arg_simu[[x]]$config_temp
+      temp_weight <- arg_simu[[x]]$temp_weight
 
-      # Select coefficient related to the simulation
-      if(nsim == 1){
-        temp_coef <- coef_sim
-      } else{
-        temp_coef <- coef_sim[i, ]
+      # select coefficient related to the simulation
+      if(nsim > 1){
         dem <- dplyr::filter(dem, sim == i)
       }
 
@@ -137,25 +140,30 @@ forecast_mort_dlnm <- function(dem_sc, temp_rcp, model,
       pred_effect <- lapply(names(config_temp), function(k)
       {
         df <- config_temp[[k]]
-        pred <- predict_attrib_dlnm(temp_model, newdata = df, coef_sim = temp_coef,
-                                    fast = T)$pred_effect
-
-        # Aggregate effects over each year during the projection
-        ## We assume the weight associated with the distribution of virtual deaths
-        ## is constant.
+        pred <- predict_attrib_dlnm(temp_model, newdata = df, coef_sim = coef_sim,
+                                    fast = T, sensi = sensi_cen)$pred_effect
+        # Aggregate over year under homogeneous number of deaths during the projection (no_weight)
+        # And by applying a weight
         pred <- pred %>%
+          mutate(day = day(datedec), month = month(datedec)) %>%
+          left_join(temp_weight, by = join_by(day, month)) %>%
+          mutate(day = NULL, month = NULL) %>%
+          mutate(af_weight = af * (1 - af)^(-1) * weight,
+                 af_no_weight = af * (1 - af)^(-1)) %>%
           group_by(years) %>%
-          summarise(ewt_attrib_year = sum(ewt_attrib), nb_days = n())
-        pred <- pred %>% mutate(attrib_frac = ewt_attrib_year / nb_days)
-
-        # Apply temperature effect on mortality rates
+          summarise(
+            af_weight_year = sum(af_weight),
+            af_no_weight_year = sum(af_no_weight),
+            nb_days = n()) %>%
+          mutate(af_no_weight_year = af_no_weight_year / nb_days)
+        # apply temperature effect on mortality
         dem <- dem %>%
           left_join(y = pred, by = c("year" = "years"))
         dem <- na.omit(dem)
         dem <- dem %>% mutate(
-          Qxt_xs = 1-exp(-(-log(1-Qxt) * (1 + attrib_frac))),
-          attrib_frac = attrib_frac, temp_effect = k
-          )
+          # Alternatively, we can use af_no_weight_year for unweighted attributable fraction
+          Qxt_xs = 1-exp(-(-log(1-Qxt) * (1 + af_weight_year))),
+          temp_effect = k)
         return(dem)
       })
       pred_effect <- do.call("rbind", pred_effect)
@@ -172,13 +180,14 @@ forecast_mort_dlnm <- function(dem_sc, temp_rcp, model,
     ## 1 - Excess of deaths in % and number
     tab_excess <- res %>%
       group_by(temp_effect, sim, year, age_bk) %>%
-      summarise(attrib_frac = mean(attrib_frac)) %>%
-      dplyr::select(temp_effect, sim, year, age_bk, attrib_frac)
+      summarise(af_weight_year = mean(af_weight_year),
+                af_no_weight_year = mean(af_no_weight_year)) %>%
+      dplyr::select(temp_effect, sim, year, age_bk, af_weight_year, af_no_weight_year)
 
-    # Add life expectancy with temperature effects
-    ## Remove not used scenario
+    # add life expectancy with temperature effects
+    ## remove not used scenario
     res <- res %>%
-      dplyr::filter(temp_effect %in% sel_effect)
+      dplyr::filter(temp_effect %in% c("all_effect", "extr_hot_effect"))
     res <- life_exp_ts(res, calc_xs = TRUE)
     # Computes main indicators :
     ## 2 - Life expectancy for particular ages
@@ -227,6 +236,7 @@ forecast_mort_dlnm <- function(dem_sc, temp_rcp, model,
       source(paste(fold_bib,"predict_attrib_dlnm.R",sep=""), encoding = "UTF-8")
       source(paste(fold_bib,"life_exp_ts.R",sep=""), encoding = "UTF-8")
       source(paste(fold_bib,"utils.R",sep=""), encoding = "UTF-8")
+      source(paste(fold_bib,"attrdl.R",sep=""), encoding = "UTF-8")
       invisible(lapply(c("lubridate", "splines","mgcv", "dlnm", "data.table",
                          "ggplot2","scales","readxl","kableExtra", "dplyr",
                          "tidyr", "mvtnorm", "Rfast",
