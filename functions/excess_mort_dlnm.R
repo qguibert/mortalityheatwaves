@@ -8,8 +8,7 @@
 #' @param parallel type of parallelization
 #' @param ncpus number of cores to use
 ###################################
-excess_mort_dlnm <- function(data_hist, model, q_range = NULL,
-                             nsim = 1, parallel = c("no", "snow", "multicore"),
+excess_mort_dlnm <- function(data_hist, model, q_range = NULL, nsim = 1, parallel = c("no", "snow", "multicore"),
                              ncpus = 1)
 {
   #sanity check
@@ -36,7 +35,6 @@ excess_mort_dlnm <- function(data_hist, model, q_range = NULL,
   {
     if(length(q_range) != 2) stop("q_range should be of length 2")
   }
-
   n <- length(model)
   age_bucket <- names(model)
   seed <- 12345
@@ -63,52 +61,52 @@ excess_mort_dlnm <- function(data_hist, model, q_range = NULL,
     # Compute bootstrapped coefficients
     if (nsim == 1)
     {
-      coef_sim <- NULL
+      coef_sim <- FALSE
     } else
     {
       set.seed(seed + x)
-      coef_sim <- mvrnorm(nsim, temp_model$coef, temp_model$vcov)
+      coef_sim <- TRUE
     }
 
     # Configure different samples for each effect of temperature
     config_temp <-list(
       all_effect = dem %>% mutate(select_period = 1),
-      hot_effect = dem %>% mutate(select_period = 1 * (dem$tavg >  temp_model$cen)),
-      cold_effect = dem %>% mutate(select_period = 1 * (dem$tavg <  temp_model$cen)),
-      moderate_hot_effect = dem %>% mutate(select_period = 1 * (dem$tavg >  temp_model$cen & dem$tavg <  q_range[2])),
-      moderate_cold_effect = dem %>% mutate(select_period = 1 * (dem$tavg <  temp_model$cen & dem$tavg >  q_range[1])),
-      extr_hot_effect = dem %>% mutate(select_period = 1 * (dem$tavg >  q_range[2])),
-      extr_cold_effect = dem %>% mutate(select_period = 1 * (dem$tavg <  q_range[1]))
+      hot_effect = dem %>% mutate(select_period = 1 * (dem$TAVG >  temp_model$cen)),
+      cold_effect = dem %>% mutate(select_period = 1 * (dem$TAVG <  temp_model$cen)),
+      moderate_hot_effect = dem %>% mutate(select_period = 1 * (dem$TAVG >  temp_model$cen & dem$TAVG <  q_range[2])),
+      moderate_cold_effect = dem %>% mutate(select_period = 1 * (dem$TAVG <  temp_model$cen & dem$TAVG >  q_range[1])),
+      extr_hot_effect = dem %>% mutate(select_period = 1 * (dem$TAVG >  q_range[2])),
+      extr_cold_effect = dem %>% mutate(select_period = 1 * (dem$TAVG <  q_range[1])),
+      canicule_effect = dem %>% mutate(select_period = 1 * (dem$Ind_canicule == 1))
     )
 
     # Function for simulation temperature effects
     pred_effect_sim <- function(i)
     {
-      # select coefficient
-      if(nsim == 1){
-        temp_coef <- coef_sim
-      } else{
-        temp_coef <- coef_sim[i, ]
-      }
       # extract coefs and compute all temperature effects
       pred_effect <- lapply(names(config_temp), function(k)
       {
         df <- config_temp[[k]]
-        pred <- predict_attrib_dlnm(temp_model, newdata = df, coef_sim = temp_coef)$pred_effect
+        pred <- predict_attrib_dlnm(temp_model, newdata = df, coef_sim = coef_sim)$pred_effect
         # Agregate results on the populations
         df <- df %>%
-          dplyr::select(datedec, age_bk)
+          dplyr::select(DateDec, age_bk)
         pred <- pred %>%
-          left_join(y = df, by = c("datedec")) %>%
-          rename(Dxtd = nb_deaths) %>%
-          mutate(Dxtd_xs = Dxtd * ewt_contr, temp_effect = k)
+          left_join(y = df, by = c("DateDec")) %>%
+          rename(Dxtd = Nombre_de_deces) %>%
+          mutate(temp_effect = k)
         # Agregate by year to reduce size if nsim > 10
         if(nsim > 10)
         {
           pred <- pred %>%
-            group_by(years, age_bk, temp_effect) %>%
-            summarise(Dxt = sum(Dxtd), Dxt_xs = sum(Dxtd_xs)) %>%
-            mutate(attrib_frac = Dxt_xs / Dxt)
+            group_by(YEARS, age_bk, temp_effect) %>%
+            summarise(
+              Dxt = sum(Dxtd),
+              an_sum = sum(an),
+              cases_sum = sum(cases)) %>%
+            mutate(af_year = an_sum / cases_sum,
+                   an_year = af_year * Dxt,
+                   ajust_factor = (1 - af_year)^(-1))
         }
         return(pred)
       })
@@ -132,6 +130,7 @@ excess_mort_dlnm <- function(data_hist, model, q_range = NULL,
       parallel::clusterEvalQ(clus, {
         source(paste(fold_bib,"predict_attrib_dlnm.R",sep=""), encoding = "UTF-8")
         source(paste(fold_bib,"utils.R",sep=""), encoding = "UTF-8")
+        source(paste(fold_bib,"attrdl.R",sep=""), encoding = "UTF-8")
         invisible(lapply(c("lubridate", "splines","mgcv", "dlnm", "data.table",
                            "ggplot2","scales","readxl","kableExtra", "dplyr", "tidyr", "mvtnorm", "Rfast",
                            "parallel"), instal.import.package))
@@ -156,7 +155,6 @@ excess_mort_dlnm <- function(data_hist, model, q_range = NULL,
     }
     return(pred)
   }))
-
   # Aggregate by years, temp_effect and age bk
   if(nsim > 10){
     # res_agg and res are equal because we do not calculate the number of death
@@ -165,15 +163,23 @@ excess_mort_dlnm <- function(data_hist, model, q_range = NULL,
     res_mean = NULL
   } else {
     res_agg <- res %>%
-      group_by(years, age_bk, temp_effect, sim) %>%
-      summarise(Dxt = sum(Dxtd), Dxt_xs = sum(Dxtd_xs)) %>%
-      mutate(attrib_frac = Dxt_xs / Dxt)
+      group_by(YEARS, age_bk, temp_effect, sim) %>%
+      summarise(Dxt = sum(Dxtd),
+                an_sum = sum(an),
+                cases_sum = sum(cases)) %>%
+      mutate(af_year = an_sum / cases_sum,
+             an_year = af_year * Dxt,
+             ajust_factor = (1 - af_year)^(-1))
     # Aggregate age bk and temp_effect
     res_mean <- res %>%
       na.omit() %>%
       group_by(age_bk, temp_effect, sim) %>%
-      summarise(Dxt = mean(Dxtd), Dxt_xs = mean(Dxtd_xs),
-                attrib_frac = sum(Dxt_xs) / sum(Dxt))
+      summarise(Dxt = mean(Dxtd),
+                an_sum = sum(an),
+                cases_sum = sum(cases)) %>%
+      mutate(af_mean = an_sum / cases_sum,
+             an_mean = af_mean * Dxt,
+             ajust_factor = (1 - af_mean)^(-1))
   }
 
   return(list(excess_mort = res, excess_mort_year = res_agg, avg_attrib_frac = res_mean))

@@ -5,11 +5,9 @@
 #' @param model a object containing the fitted DLNM model
 #' @param newdata a data.frame in which to look for variables with which to
 #' predict
-#' @param coef_sim a list contained simulated DLMN coefficients. If `NULL`
-#' the function used fitted parameters.
 #' @param fast an option to avoid heavy calculations.
 ##############################################################################
-predict_attrib_dlnm <- function(model, newdata, coef_sim = NULL, fast = F)
+predict_attrib_dlnm <- function(model, newdata, coef_sim = F,  fast = F, sensi = 0)
 {
   if(! is(model, "list"))
   {
@@ -21,7 +19,7 @@ predict_attrib_dlnm <- function(model, newdata, coef_sim = NULL, fast = F)
     stop("The class of 'newdata' should be 'data.frame'")
   }
 
-  if(! all(c("datedec" , "tavg", "select_period") %in% names(newdata)))
+  if(! all(c("DateDec" , "TAVG", "select_period") %in% names(newdata)))
   {
     stop("Check colnames of 'newdata' ")
   }
@@ -29,38 +27,42 @@ predict_attrib_dlnm <- function(model, newdata, coef_sim = NULL, fast = F)
     stop("No period is selected")
   }
 
-  # Get the basis to predict
-  bvar <- do.call(onebasis, c(list(x = newdata$tavg), model$argvar))
-  cenvec <- do.call(onebasis, c(list(x = model$cen), model$argvar))
-  bvarcen <- scale(bvar, center = cenvec, scale = F)
-
-  #parameters from the model
-  if(is.null(coef_sim))
+  if(! c("Nombre_de_deces") %in% names(newdata))
   {
-    coef <- model$coef
-  } else
-  {
-    coef <- coef_sim
+    newdata$Nombre_de_deces <- 1
   }
 
-  if(fast)
-  {
-    df <- newdata %>% dplyr::select(datedec, years, tavg, select_period)
-  } else
-  {
-    if(! c("nb_deaths") %in% names(newdata))
-    {
-      newdata$nb_deaths <- 1
-    }
-    df <- newdata %>% dplyr::select(datedec, years, tavg, nb_deaths, select_period)
-  }
+  df <- newdata %>% dplyr::select(DateDec, YEARS, TAVG, Nombre_de_deces, select_period)
   df <- unique(df) # remove duplicated data
-  df <- df[order(df$datedec), ] # order by date
+  df <- df[order(df$DateDec), ] # order by date
   # COMPUTE THE DAILY CONTRIBUTIONS OF ATTRIBUTABLE DEATHS
-  df$wt <- bvarcen %*% coef * df$select_period
-  df$ewt <- exp(df$wt) * df$select_period
-  df$ewt_contr <- (1 - exp(-df$wt)) * df$select_period
-  df$ewt_attrib <- (df$ewt - 1) * df$select_period
+  cb <- crossbasis(df$TAVG, lag = model$lag,
+                   argvar = model$argvar, arglag = model$arglag)
+  # applied range of temperature
+  temperature_select <- df$TAVG
+  if(length(which(df$select_period == 0)) >0)
+    temperature_select[df$select_period == 0] <- model$cen + sensi
+  # Compute daily attributable number of deaths
+  attr_comp <- attrdl(x = temperature_select, basis = cb, cases = df$Nombre_de_deces,
+               model = model$model, dir= "forw",
+               cen = model$cen + sensi, tot = F,
+               range = NULL, sim = coef_sim, nsim = 1)
+  # Extract
+  if(coef_sim)
+  {
+    att_af <- attr_comp$af[ ,1]
+    att_an <- attr_comp$an[ ,1]
+  } else
+  {
+    att_af <- attr_comp$af
+    att_an <- attr_comp$an
+  }
+  att_cases <- attr_comp$cases
+
+  # Update data frame
+  df$af <- replace(att_af, is.na(att_af), 0)
+  df$an <- replace(att_an, is.na(att_an), 0)
+  df$cases <- replace(att_cases, is.na(att_cases), 0)
 
   # Aggregate over year under homogeneous number of deaths during the projection
   if(fast)
@@ -69,11 +71,14 @@ predict_attrib_dlnm <- function(model, newdata, coef_sim = NULL, fast = F)
   } else
   {
     df_agg <- df %>%
-      group_by(years) %>%
-      summarise(ewt_contr_year = sum(ewt_contr * nb_deaths),
-                ewt_attrib_year = sum(ewt_attrib *nb_deaths),
-                nb_deaths = sum(nb_deaths))
-    df_agg <- df_agg %>% mutate(attrib_frac = ewt_attrib_year / nb_deaths, contr_frac = ewt_contr_year / nb_deaths)
+      group_by(YEARS) %>%
+      summarise(an_sum = sum(an),
+                nb_deaths = sum(Nombre_de_deces),
+                cases_sum = sum(cases))
+    df_agg <- df_agg %>%
+      mutate(af_year = an_sum / cases_sum,
+             an_year = af_year * nb_deaths,
+             ajust_factor = (1 - af_year)^(-1))
   }
   return(list(pred_effect= df, pred_effect_year = df_agg))
 }
