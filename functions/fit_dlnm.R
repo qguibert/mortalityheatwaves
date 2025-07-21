@@ -1,6 +1,5 @@
 ########################################
-#' fit_dlnm
-#' Function for fitting dlnm models per age bucket or for all the population
+#' fit_dlnm: function for fitting dlnm models per age bucket or for all the population
 #' @param data a list of daily dataset with number of deaths and covariates, dates
 #' and age buckets.
 #' @param param_dlnm a set of parameters to fit the DLMN model, see `dlnm`-package
@@ -12,93 +11,86 @@
 #' @param ci.level defines the confidence interval level.
 ########################################
 
-fit_dlnm <- function(data, param_dlnm, per_age = T, summer = F, psi = NULL,
-                     ci.level = 0.95)
+fit_dlnm <- function(data, param_dlnm, per_age = T, summer = F, psi = NULL, ci.level = 0.95)
 {
-  # Create variables yday (day of the year), dow (day of the week), and year
+  # create variables
   data <-  data %>%
-    mutate(yday = yday(datedec),
-           dow = substr(weekdays(datedec), 1, 3),
-           year = year(datedec))
+    mutate(yday = yday(DateDec),
+           dow = substr(weekdays(DateDec), 1, 3),
+           year = year(DateDec))
 
-  # Function for fitting the DLNM model
+  # function for fitting the model
   my_fit <- function(df)
   {
-    # Set argvar, arglag lists, and crossbasis depending on whether it's summer
-    # or whole year
-    if(summer)
-      # Summer period
+    # set argvar, arglag list, and crossbasis
+    if(summer) # summer period
     {
       argvar <- list(
         fun = param_dlnm$varfun,
-        knots = quantile(df$tavg, param_dlnm$varper / 100, na.rm = T),
-        Bound = range(df$tavg, na.rm = T)
+        knots = quantile(df$TAVG, param_dlnm$varper / 100, na.rm = T),
+        Bound = range(df$TAVG, na.rm = T)
       )
       arglag <- list(knots = logknots(param_dlnm$lag, param_dlnm$lagnk))
 
-      #  summer periods are discontinuous so data should be grouped beforehand
-      #  by creating a variable `indsummer`
-      cb <- crossbasis(df$tavg, lag = param_dlnm$lag, argvar = argvar,
-                       arglag = arglag, group = df$indsummer)
+      cb <- crossbasis(df$TAVG, lag = param_dlnm$lag, argvar = argvar, arglag = arglag,
+                       group = df$indsummer) #  summer periods are discontinuous so data should be grouped
 
-      # Model formula for summer period
-      formula <- nb_deaths ~ cb + dow + ns(yday, df = param_dlnm$dfseas):factor(year) +
-        ns(datedec, df = round(length(unique(year)) / param_dlnm$dftrend / 10))
-    } else
-      # Whole year
+      ## model formula
+      formula <- Nombre_de_deces ~ cb + dow + ns(yday, df = param_dlnm$dfseas):factor(year) +
+        ns(DateDec, df = round(length(unique(year)) / param_dlnm$dftrend / 10))
+    } else # whole year
     {
       argvar <- list(
         fun = param_dlnm$varfun,
-        knots = quantile(df$tavg, param_dlnm$varper / 100, na.rm=T),
+        knots = quantile(df$TAVG, param_dlnm$varper / 100, na.rm=T),
         degree = param_dlnm$vardegree
       )
       arglag <- list(knots = logknots(param_dlnm$lag, param_dlnm$lagnk))
 
-      cb <- crossbasis(df$tavg,lag = param_dlnm$lag, argvar = argvar,
-                       arglag = arglag)
-      # Model formula
-      formula  <- nb_deaths ~ cb + dow + ns(datedec, df = param_dlnm$dfseas *
-                                              length(unique(year)))
+      cb <- crossbasis(df$TAVG,lag = param_dlnm$lag, argvar = argvar, arglag = arglag)
+      # model formula
+      formula  <- Nombre_de_deces ~ cb + dow + ns(DateDec, df=param_dlnm$dfseas*length(unique(year)))
 
     }
 
-    # Run the GLM model and prediction
-    model <- glm(formula, data = df, family = quasipoisson, na.action = "na.exclude")
-    # calibrate the MMT, which corresponds to the temperature of minimum
-    # mortality.
-
-    # Calibrate the minimum mortality temperature (mm) for estimating relative
-    #  risk
+    # run the model and prediction
+    model <- glm(formula, data = df, family = quasipoisson, na.action = "na.exclude", x = TRUE)
+    # calibrate the mm, which corresponds to the temperature of minimum mortality, which will be used as
+    #    as reference to estimate relative risks and as temperature threshold
+    #    to differentiate the contribution of heat and cold to the total mortality
+    #    attributable to non-optimal temperatures.
     if(is.null(psi))
     {
-      # Provisional centering point to have initial prediction
-      cen <- mean(df$tavg, na.rm = T)
+      # provisional centering point to have initial prediction for chosing the mmt
+      cen <- mean(df$TAVG, na.rm = T)
+      # cp <- crosspred(cb, model ,cen = cen, by = 0.1)
+      # cen <- cp$predvar[which.min(cp$allRRfit)]
     } else
     {
       cen <- psi
     }
 
-    # Reduction to overall cumulative
+    # reduction to overall cumulative
     red <- crossreduce(cb, model, cen = cen)
     coef <- coef(red)
     vcov <- vcov(red)
 
-    # Define minimum mortality values: exclude low and very hot temperatures
+    # DEFINE MINIMUM MORTALITY VALUES: EXCLUDE LOW AND VERY HOT TEMPERATURE
     if(is.null(psi))
     {
-      predvar <- quantile(df$tavg,1:99/100,na.rm=T)
+      predvar <- quantile(df$TAVG,1:99/100,na.rm=T)
       mmt_argvar <- argvar
       mmt_argvar$x = predvar
       bvar <- do.call(onebasis, mmt_argvar)
       cen <- (1:99)[which.min((bvar %*% coef))]
-      cen <- quantile(df$tavg, cen/100, na.rm=T)
+      cen <- quantile(df$TAVG, cen/100, na.rm=T)
     } else
     {
       cen <- psi
     }
 
-    # Prediction
-    pred <- crosspred(cb, model, cen= cen, by=0.1, ci.level = ci.level)
+    # prediction
+    pred <- crosspred(cb, model, cen=cen, by=0.1, ci.level = ci.level)
 
     return(list(
       cb = cb,
@@ -113,26 +105,26 @@ fit_dlnm <- function(data, param_dlnm, per_age = T, summer = F, psi = NULL,
     ))
   }
 
-  # Run process
+  # run process
   if(summer)
   {
-    # Number of summers for grouping data as summer period are discontinuous
+    # number of summer for grouping data as summer period are discontinuous
     data$indsummer <- data$year - min(data$year) + 1
   }
 
   if(per_age)
   {
     list_age <- unique(data$age_bk)
-    # Run DLNM model for each age range
+    # Run dlnm model for each age range
     list_model <- lapply(list_age, function(age){
-      # Select data
+      # select data
       df <- data[which(age_bk == paste0(age)), ]
       my_fit(df)
     })
     names(list_model) <- list_age
   } else
   {
-    # Run DLNM model for all ages
+    # Run dlnm for all ages
     list_model <- list(
       "all_ages" = my_fit(data)
     )

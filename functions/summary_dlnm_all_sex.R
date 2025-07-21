@@ -1,15 +1,20 @@
 #----------------------------------------------------------
-#  summary_dlnm_all_sex
+#'  summary_dlnm_all_sex: This function takes as input a nested
+#'  list object containing DLNM (Distributed Lag Non-Linear Model)
+#'   results for different sexes and age groups. It extracts the estimated
+#'   relative risks and their confidence intervals, then returns
+#'   a ggplot object visualizing the exposure–response curves
+#'   for each age group and sex.
 #----------------------------------------------------------
 summary_dlnm_all_sex <- function(obj)
 {
+  # Check that the input is a list
   if(! is(obj, "list"))
   {
     stop("'obj' should be list")
   }
 
-  # Visualization
-  # get prediction and ci intervals
+  # Extract predictions and confidence intervals from all groups
   pred <- do.call("rbind",
                   lapply(names(obj), function(g)
                   {
@@ -26,29 +31,15 @@ summary_dlnm_all_sex <- function(obj)
                               )
                             }))
                   }))
+
+  # Set sex variable as factor with labels
   pred$sex <- as.factor(pred$sex)
   levels(pred$sex) <- c("Female", "Male")
 
-  #plot RR
+  # Create the RR plot
   RRplot <- ggplot(pred) +
     geom_line(aes(x = temp, y = rr, colour = sex), linewidth = 1.2) +
     geom_ribbon(aes(x = temp, ymin = rrlow, ymax = rrhigh, fill = sex), alpha = 0.3) +
-    # geom_vline(
-    #   xintercept = quantile(obj[[1]][[1]]$model$data$tavg, 0.99, na.rm = T),
-    #   linetype = "dashed", color = "red", linewidth = 1
-    # ) +
-    # geom_vline(
-    #   xintercept = quantile(obj[[1]][[1]]$model$data$tavg, 0.95, na.rm = T),
-    #   linetype = "dashed", color = "orange",linewidth = 1
-    # ) +
-    # geom_vline(
-    #   xintercept = quantile(obj[[1]][[1]]$model$data$tavg, 0.05, na.rm = T),
-    #   linetype = "dashed", color = "cyan", linewidth = 1
-    # ) +
-    # geom_vline(
-    #   xintercept = quantile(obj[[1]][[1]]$model$data$tavg, 0.01, na.rm = T),
-    #   linetype = "dashed", color = "blue", linewidth = 1
-    # ) +
     geom_hline(
       yintercept = 1,
       linetype = "solid", color = "grey40"

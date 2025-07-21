@@ -37,7 +37,7 @@ summary_forecast_temp_effect <- function(afftab, dec_weight, var)
     ggplot(aes(x = year, y = xsmean)) +
     geom_line(aes(colour = factor(temp_effect))) +
     geom_ribbon(aes(ymax = xsmax, ymin = xsmin, fill = factor(temp_effect)), alpha = 0.3) +
-    facet_wrap( ~ rcp, scales = "free_y", ncol = 3) +
+    facet_wrap( ~ rcp, ncol = 3) +
     theme(legend.position = "bottom",
           legend.background = element_rect(fill = "white", color = "black"),
           strip.background = element_rect(fill = "white", color = NA),
@@ -81,7 +81,7 @@ summary_forecast_temp_effect <- function(afftab, dec_weight, var)
       ggplot(aes(x = year, y = xsmean)) +
       geom_line(aes(colour = factor(temp_effect))) +
       geom_ribbon(aes(ymax = xsmax, ymin = xsmin, fill = factor(temp_effect)), alpha = 0.3) +
-      facet_wrap( ~ rcp, scales = "free_y", ncol = 3) +
+      facet_wrap( ~ rcp, ncol = 3) +
       theme(legend.position = "bottom",
             legend.background = element_rect(fill = "white", color = "black"),
             strip.background = element_rect(fill = "white", color = NA),
@@ -100,7 +100,7 @@ summary_forecast_temp_effect <- function(afftab, dec_weight, var)
       ggplot(aes(x = year, y = xsmean)) +
       geom_line(aes(colour = factor(temp_effect))) +
       geom_ribbon(aes(ymax = xsmax, ymin = xsmin, fill = factor(temp_effect)), alpha = 0.3) +
-      facet_wrap( ~ rcp, scales = "free_y", ncol = 3) +
+      facet_wrap( ~ rcp, ncol = 3) +
       theme(legend.position = "bottom",
             legend.background = element_rect(fill = "white", color = "black"),
             strip.background = element_rect(fill = "white", color = NA),

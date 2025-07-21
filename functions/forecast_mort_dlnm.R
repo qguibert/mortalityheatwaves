@@ -58,10 +58,9 @@ forecast_mort_dlnm <- function(dem_sc, temp_rcp, model, weight,
   }
   if(is.null(year_breaks) | is.null(year_labels))
   {
-    year_breaks <- c(1980, 1989, 1999, 2009, 2019, 2029, 2039, 2049, 2059, 2069,
-                     2079, 2089, 2100)
-    year_labels <- c("1980s", "1990s", "2000s", "2010s", "2020s", "2030s",
-                     "2040s", "2050s", "2060s", "2070s", "2080s","2090s")
+    year_breaks <- c(1980, 1989, 1999, 2009, 2019, 2029, 2039, 2049, 2059, 2069, 2079, 2089, 2100)
+    year_labels <- c("1980s", "1990s", "2000s", "2010s", "2020s", "2030s", "2040s",
+                     "2050s", "2060s", "2070s", "2080s","2090s")
   }
 
   # parameters
@@ -74,10 +73,10 @@ forecast_mort_dlnm <- function(dem_sc, temp_rcp, model, weight,
   # calc life expectancy
   dem_sc <- life_exp_ts(dem_sc, calc_xs = FALSE)
 
-  # Step 1 - Extract list of models, demographie datasets and simulate coefficients
+  # step 1 - extract list of models, demographie datasets and simulate coefficients
    arg_simu <- lapply(1:n, function(x)
   {
-    if(n > 1) # Model per age bucket
+    if(n > 1) # model per age bucket
     {
       # Select model and people in the age bucket
       temp_model <- model[[x]]
@@ -101,13 +100,14 @@ forecast_mort_dlnm <- function(dem_sc, temp_rcp, model, weight,
 
     # Configure different samples for each effect of temperature
     config_temp <-list(
-      all_effect = temp_rcp %>% mutate(select_period = 1) %>% dplyr::select(years, datedec, tavg, select_period),
-      moderate_hot_effect = temp_rcp %>% mutate(select_period = 1 * (temp_rcp$tavg >  temp_model$cen & temp_rcp$tavg <  q_range[2])) %>% dplyr::select(years, datedec, tavg, select_period),
-      moderate_cold_effect = temp_rcp %>% mutate(select_period = 1 * (temp_rcp$tavg <  temp_model$cen & temp_rcp$tavg >  q_range[1])) %>% dplyr::select(years, datedec, tavg, select_period),
-      extr_hot_effect = temp_rcp %>% mutate(select_period = 1 * (temp_rcp$tavg >=  q_range[2])) %>%
-        dplyr::select(years, datedec, tavg, select_period),
-      extr_cold_effect = temp_rcp %>% mutate(select_period = 1 * (temp_rcp$tavg <=  q_range[1])) %>%
-        dplyr::select(years, datedec, tavg, select_period)
+      all_effect = temp_rcp %>% mutate(select_period = 1) %>% dplyr::select(YEARS, DateDec, TAVG, select_period),
+      # hot_effect = temp_rcp %>% mutate(select_period = 1 * (temp_rcp$TAVG >  temp_model$cen))  %>% dplyr::select(YEARS, DateDec, TAVG, select_period),
+      # cold_effect = temp_rcp %>% mutate(select_period = 1 * (temp_rcp$TAVG <  temp_model$cen))  %>% dplyr::select(YEARS, DateDec, TAVG, select_period),
+      moderate_hot_effect = temp_rcp %>% mutate(select_period = 1 * (temp_rcp$TAVG >  temp_model$cen & temp_rcp$TAVG <  q_range[2])) %>% dplyr::select(YEARS, DateDec, TAVG, select_period),
+      moderate_cold_effect = temp_rcp %>% mutate(select_period = 1 * (temp_rcp$TAVG <  temp_model$cen & temp_rcp$TAVG >  q_range[1])) %>% dplyr::select(YEARS, DateDec, TAVG, select_period),
+      extr_hot_effect = temp_rcp %>% mutate(select_period = 1 * (temp_rcp$TAVG >=  q_range[2])) %>% dplyr::select(YEARS, DateDec, TAVG, select_period),
+      extr_cold_effect = temp_rcp %>% mutate(select_period = 1 * (temp_rcp$TAVG <=  q_range[1])) %>% dplyr::select(YEARS, DateDec, TAVG, select_period),
+      canicule_effect = temp_rcp %>% mutate(select_period = 1 * (temp_rcp$Ind_canicule == 1)) %>% dplyr::select(YEARS, DateDec, TAVG, select_period)
     )
     return(list(
       temp_model = temp_model,
@@ -118,11 +118,10 @@ forecast_mort_dlnm <- function(dem_sc, temp_rcp, model, weight,
     ))
   })
 
-  # Step 2- Create function for forecasting a population
-  # This function is called for each simulation
+  # step 2- create function for forecasting a population - this function is called for each simulation
   forecast_sim <- function(i)
   {
-    # Loop on age buckets
+    # loop on age buckets
     res <- lapply(1:n, function(x){
       # get common arguments
       temp_model <- arg_simu[[x]]$temp_model
@@ -136,7 +135,7 @@ forecast_mort_dlnm <- function(dem_sc, temp_rcp, model, weight,
         dem <- dplyr::filter(dem, sim == i)
       }
 
-      # Extract coefs and compute all temperature effects
+      # extract coefs and compute all temperature effects
       pred_effect <- lapply(names(config_temp), function(k)
       {
         df <- config_temp[[k]]
@@ -145,12 +144,12 @@ forecast_mort_dlnm <- function(dem_sc, temp_rcp, model, weight,
         # Aggregate over year under homogeneous number of deaths during the projection (no_weight)
         # And by applying a weight
         pred <- pred %>%
-          mutate(day = day(datedec), month = month(datedec)) %>%
+          mutate(day = day(DateDec), month = month(DateDec)) %>%
           left_join(temp_weight, by = join_by(day, month)) %>%
           mutate(day = NULL, month = NULL) %>%
           mutate(af_weight = af * (1 - af)^(-1) * weight,
                  af_no_weight = af * (1 - af)^(-1)) %>%
-          group_by(years) %>%
+          group_by(YEARS) %>%
           summarise(
             af_weight_year = sum(af_weight),
             af_no_weight_year = sum(af_no_weight),
@@ -158,7 +157,7 @@ forecast_mort_dlnm <- function(dem_sc, temp_rcp, model, weight,
           mutate(af_no_weight_year = af_no_weight_year / nb_days)
         # apply temperature effect on mortality
         dem <- dem %>%
-          left_join(y = pred, by = c("year" = "years"))
+          left_join(y = pred, by = c("year" = "YEARS"))
         dem <- na.omit(dem)
         dem <- dem %>% mutate(
           # Alternatively, we can use af_no_weight_year for unweighted attributable fraction
@@ -175,9 +174,9 @@ forecast_mort_dlnm <- function(dem_sc, temp_rcp, model, weight,
     {
       res <- do.call("rbind", res)
     }
-    # Reorder
+    # reorder
     res <- res %>% arrange(temp_effect, sim, year, age)
-    ## 1 - Excess of deaths in % and number
+    ## 1 - excess of deaths in % and number
     tab_excess <- res %>%
       group_by(temp_effect, sim, year, age_bk) %>%
       summarise(af_weight_year = mean(af_weight_year),
@@ -189,8 +188,8 @@ forecast_mort_dlnm <- function(dem_sc, temp_rcp, model, weight,
     res <- res %>%
       dplyr::filter(temp_effect %in% c("all_effect", "extr_hot_effect"))
     res <- life_exp_ts(res, calc_xs = TRUE)
-    # Computes main indicators :
-    ## 2 - Life expectancy for particular ages
+    # computes main indicators :
+    ## 2 - life expectancy for particular ages
     tab_ex <- do.call("rbind", lapply(age_ex, function(xx){
       res %>%
         filter(age == xx) %>%
@@ -202,7 +201,7 @@ forecast_mort_dlnm <- function(dem_sc, temp_rcp, model, weight,
         filter(age == xx) %>%
         dplyr::select(temp_effect, sim, year, age, Qxt, Qxt_xs)
     }))
-    # Configure output
+    # configure output
     if(detail.result)
     {
       tab_res <- res
@@ -222,7 +221,7 @@ forecast_mort_dlnm <- function(dem_sc, temp_rcp, model, weight,
   # step 3- run parallel or sequential computation, and aggregate results
   if (parallel != "no" && nsim > 1)
   {
-    # Configure parallelization
+    # configure parallelization
     if (parallel == "snow") type.par <- "PSOCK"
     else if (parallel == "multicore") type.par <- "FORK"
     if (parallel == "multicore" & .Platform$OS.type == "windows")
@@ -238,15 +237,14 @@ forecast_mort_dlnm <- function(dem_sc, temp_rcp, model, weight,
       source(paste(fold_bib,"utils.R",sep=""), encoding = "UTF-8")
       source(paste(fold_bib,"attrdl.R",sep=""), encoding = "UTF-8")
       invisible(lapply(c("lubridate", "splines","mgcv", "dlnm", "data.table",
-                         "ggplot2","scales","readxl","kableExtra", "dplyr",
-                         "tidyr", "mvtnorm", "Rfast",
+                         "ggplot2","scales","readxl","kableExtra", "dplyr", "tidyr", "mvtnorm", "Rfast",
                          "parallel"), instal.import.package))
     })
     # Run parallel computation
     pred <- try(parallel::parLapply(clus, 1:nsim, forecast_sim))
     if(!inherits(pred, "try-error"))
     {
-      # Extract and organize results in a list
+      # extract and organize results in a list
       res <- list(
         tab_res = do.call("rbind", lapply(1:nsim, function(i){pred[[i]]$tab_res})),
         tab_ex = do.call("rbind", lapply(1:nsim, function(i){pred[[i]]$tab_ex})),
@@ -268,7 +266,7 @@ forecast_mort_dlnm <- function(dem_sc, temp_rcp, model, weight,
       )
     } else{
       pred <- lapply(X = 1:nsim, FUN = forecast_sim)
-      # Extract and organize results in a list
+      # extract and organize results in a list
       res <- list(
         tab_res = do.call("rbind", lapply(1:nsim, function(i){pred[[i]]$tab_res})),
         tab_ex = do.call("rbind", lapply(1:nsim, function(i){pred[[i]]$tab_ex})),
