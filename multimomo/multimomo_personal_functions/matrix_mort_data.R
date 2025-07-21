@@ -1,10 +1,14 @@
+#' Define a weight matrix
+#'
+#' @description Define a weight matrix
+#' @export
 matrix_mort_data <- function(dt, yv, xv, var_str){
   temp <- dt %>%
     rename_with(~ c("var"), all_of(var_str)) %>%
     rename_with(tolower) %>%
     dplyr::filter(year %in% yv, age %in% xv) %>%
     dplyr::select(year, age, var) %>%
-    pivot_wider(names_from = age, values_from = var)
+    tidyr::pivot_wider(names_from = age, values_from = var)
   # convert to matrix
   temp <- as.matrix(temp)
   temp <- temp[, -1]
@@ -13,6 +17,9 @@ matrix_mort_data <- function(dt, yv, xv, var_str){
 }
 
 #' @keywords internal
+#'
+#' @export
+
 ### Define weight matrix
 w_matrix <- function(mat)
 {

@@ -1,3 +1,12 @@
+#' Custom function for plotting parameters
+#'
+#' @description Custom function for plotting parameters
+#'
+#' @import ggplot2
+#' @importFrom ggpubr ggarrange
+#' @importFrom RColorBrewer brewer.pal
+#'
+#' @export
 plot_kt_sim <- function(proj_par, adj_proj_par, n_sim, annee_deb, end_year)
 {
 

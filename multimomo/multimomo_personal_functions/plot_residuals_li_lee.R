@@ -18,16 +18,6 @@
 #'
 #' @details The object \code{fit} must be the output of the function \code{\link{fit_li_lee}}.
 #'
-#' @examples
-#' lst   <- MultiMoMo::european_mortality_data
-#' dat_M <- lst$M
-#' xv    <- 0:90
-#' yv = yvSPEC <- 1970:2018
-#' Countries   <- names(dat_M$UNI)
-#' country_spec <- "BE"
-#' fit_M <- fit_li_lee(xv, yv, yvSPEC, country_spec, dat_M, "NR", TRUE, FALSE)
-#' plot_residuals_li_lee(xv, yvSPEC, fit_M, country_spec, "Male")
-#'
 #' @importFrom tidyr gather
 #'
 #' @export

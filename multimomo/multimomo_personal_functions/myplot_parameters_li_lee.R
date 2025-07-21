@@ -1,3 +1,12 @@
+#' Custom function for plotting parameters
+#'
+#' @description Custom function for plotting parameters
+#'
+#' @import ggplot2
+#' @importFrom ggpubr ggarrange
+#' @importFrom ggpubr get_legend
+#'
+#' @export
 myplot_parameters_li_lee <- function(xv, yv, list_fit)
 {
 

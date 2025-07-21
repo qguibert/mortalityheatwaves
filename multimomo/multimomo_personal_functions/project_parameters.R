@@ -1,12 +1,6 @@
 #' Estimate the time series of the time dependent parameters in the calibrated Li-Lee model and
 #' make projections
 #'
-#' Function adjusted by Q. Guibert from the 'project_parameters' function of
-#' Multimomo package:
-#' - remove main component K_t for womens
-#'
-#'
-#'
 #' \loadmathjax
 #' @description
 #' This function estimates the parameters in the  time series specifications
@@ -72,23 +66,6 @@
 #'   \item The \mjeqn{\kappa_t^M}{ASCII representation} simulations: $k.t_M
 #'   \item The \mjeqn{\kappa_t^F}{ASCII representation} simulations: $k.t_F
 #' }
-#'
-#' @examples
-#' lst   <- MultiMoMo::european_mortality_data
-#' dat_M <- lst$M
-#' dat_F <- lst$F
-#' xv    <- 0:90
-#' yv = yvSPEC <- 1970:2018
-#' Countries   <- names(dat_M$UNI)
-#' CountrySPEC <- "BE"
-#' fit_M <- fit_li_lee(xv, yv, yvSPEC, CountrySPEC, dat_M, "NR", TRUE, FALSE)
-#' fit_F <- fit_li_lee(xv, yv, yvSPEC, CountrySPEC, dat_F, "NR", TRUE, FALSE)
-#'
-#' arima_spec <- list(K.t_M = "RWD", k.t_M = "AR3.1", K.t_F = "RWD", k.t_F = "AR5.0")
-#' n_ahead    <- 50
-#' n_sim      <- 10000
-#' est_method <- "PORT"
-#' proj       <- project_parameters(fit_M, fit_F, n_ahead, n_sim, arima_spec, est_method)
 #'
 #' @importFrom stats nlminb as.formula rnorm
 #' @importFrom systemfit systemfit
