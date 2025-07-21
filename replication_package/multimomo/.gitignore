@@ -1,0 +1,5 @@
+.Rproj.user
+.Rhistory
+.RData
+inst/doc
+1-calibrate_mortality.html

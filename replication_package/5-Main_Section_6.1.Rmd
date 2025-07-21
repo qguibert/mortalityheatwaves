@@ -1,0 +1,482 @@
+---
+title: "Results presented in Section 6.1 and in Appendix B"
+author: "Quentin Guibert"
+date: "2025-06-23"
+institute: "Université Paris-Dauphine"
+output:
+  html_document:
+    toc: true
+    toc_depth: 2
+    df_print: paged
+    code_folding: show
+  pdf_document:
+    toc: true
+    toc_depth: 2
+    number_sections: true
+editor_options:
+  markdown:
+    wrap: 72
+---
+
+```{r setup, include=FALSE}
+## Global options
+knitr::opts_chunk$set(cache = FALSE, warning = FALSE, message = FALSE, fig.retina = 2)
+options(encoding = 'UTF-8')
+Sys.setlocale("LC_TIME", "English")
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+## Folds
+folder <- getwd() # If necessary, please set your working directory
+fold_data <- paste0(folder, "/data/")
+fold_data_raw <- paste0(folder, "/data_raw/DRIAS/")
+fold_bib <- paste0(folder, "/functions/")
+folderTables <- paste0(folder, "/tables/")
+folderFigures <- paste0(folder, "/figures/")
+#---------------------------------------------------------------------------------------------------
+#### Load functions : ####
+# Source functions
+for (f in list.files(fold_bib))
+  source(paste(fold_bib,f,sep=""), encoding = "UTF-8")
+
+####  Load packages : ####
+invisible(lapply(c(
+  "lattice",
+  "grid",
+  "ggplot2",
+  "gridExtra",
+  "locfit",
+  "scales",
+  "lubridate",
+  "splines",
+  "mgcv",
+  "data.table",
+  "formattable",
+  "RColorBrewer",
+  "readxl",
+  "kableExtra",
+  "gtsummary",
+  "dplyr",
+  "tidyr",
+  "tidyverse",
+  "rmarkdown",
+  "ggthemes",
+  "ggforce",
+  "cowplot",
+  "ggridges",
+  "viridis",
+  "hrbrthemes",
+  "colorspace",
+  "ggbeeswarm",
+  "ggfan"),
+  instal.import.package))
+
+#----------------------------------------------------------
+#theme graphique
+theme_set(theme_bw())
+trellis.device(color = FALSE)
+```
+
+# Parameters definition
+
+```{r, echo=TRUE, message=FALSE, warning=FALSE}
+### Parameters
+#---------------------------------------------------------------------------------------------------
+list_sexe <- list(m = 1,f = 2)
+age_breaks <- c(0, 64, 74, 84, Inf)
+age_labels <- c("0-64", "65-74", "75-84", "85+")
+
+# training period
+annee_deb <- 1980
+annee_fin <- 2019
+outlier <- 999 # exclude no atypical year
+
+# other parameters
+AGE_MAX <- 108
+```
+
+# Load data series 
+
+We import daily data series for death counts and temperatures.
+
+```{r, echo=TRUE, message=FALSE, warning=FALSE}
+base_nb_deces <- lapply(list_sexe, function(s){
+  import_data_death(s, annee_deb, annee_fin, outlier)
+})
+base_nb_deces <- do.call("rbind", base_nb_deces)
+```
+
+# Summary statistics
+
+This code generates Figure 1 of the paper. 
+
+## Distribution of average daily temperatures for each month of the year
+```{r, echo=TRUE, message=FALSE, warning=FALSE}
+# ajust layout
+des.1 <- base_nb_deces %>%
+  mutate(month = as.factor(month)) %>%
+  filter(age_bk == "0-49") # only one age group is necessary
+
+# add month format
+des.1$month <- fct_recode(des.1$month, "Jan." = "1",
+                          "Feb." ="2",
+                          "Mar." ="3",
+                          "Apr." = "4",
+                          "May" = "5",
+                          "June" = "6",
+                          "July" = "7",
+                          "Aug." = "8",
+                          "Sept." = "9",
+                          "Oct." = "10",
+                          "Nov." = "11",
+                          "Dec." = "12")
+
+# plot geom_density_ridges()
+g <- ggplot(
+  des.1, 
+  aes(x = TAVG, y = month, fill = stat(x))) +
+  geom_density_ridges_gradient(scale = 3, size = 0.3, rel_min_height = 0.01) +
+  scale_fill_continuous_diverging(palette = "Blue-Yellow 3") +
+  theme_bw() +
+  labs(x = "Avg. Temperature [C]",
+       y = "Months",
+       fill = "Temp. [C]")
+
+# Display figure
+g
+
+# save figure
+sauveFigure(config = 7, 
+            title = paste0("fig1"),
+            path = folderFigures)
+g
+dev.off()
+```
+
+
+## Representation of the daily death counts according to the average daily temperature in France for women and men
+
+This code generates Figure 2 of the paper. 
+```{r, echo=TRUE, message=FALSE, warning=FALSE, fig.height = 6, fig.width = 12}
+
+# ajust layout
+des.2 <- base_nb_deces %>%
+  mutate(sexe = as.factor(sexe)) %>%
+  mutate(month = as.factor(month)) %>%
+  select(DateDec, Nombre_de_deces, TAVG, sexe) %>%
+  group_by(DateDec, sexe) %>%
+  summarise(Nombre_de_deces = sum(Nombre_de_deces),
+            TAVG = mean(TAVG))
+
+des.2$sexe <- fct_recode(des.2$sexe, "Males" = "1",
+                         "Females" ="2")
+
+#  plot
+g <- ggplot(
+  des.2, 
+  aes(x = TAVG, y = Nombre_de_deces)) +
+  geom_point(size = 0.5) +
+  geom_smooth() +
+  facet_wrap(~ sexe) +
+  theme_bw() +
+  theme(strip.background = element_rect(fill = "white", color = NA),
+        strip.text = element_text(color = "black"),
+        panel.border = element_rect(color = "black", fill = NA)) +
+  labs(x = "Avg. Temperature [C]",
+       y = "Daily deaths")
+
+# Display figure
+g
+
+# save figure
+sauveFigure(config = 8, 
+            title = paste0("fig2"),
+            path = folderFigures)
+g
+dev.off()
+```
+
+
+## Probability density of the number of deaths by month of the year
+
+This code generates Figure 3 of the paper. 
+
+```{r, echo=TRUE, message=FALSE, warning=FALSE,fig.height = 6, fig.width = 12}
+# ajust layout
+des.3 <- des.2
+des.3$month <- as.factor(month(des.2$DateDec))
+
+# add month format
+des.3$month <- fct_recode(des.3$month, "Jan." = "1",
+                          "Feb." ="2",
+                          "Mar." ="3",
+                          "Apr." = "4",
+                          "May" = "5",
+                          "June" = "6",
+                          "July" = "7",
+                          "Aug." = "8",
+                          "Sept." = "9",
+                          "Oct." = "10",
+                          "Nov." = "11",
+                          "Dec." = "12")
+
+#  geom_density_ridges()
+g <- ggplot(
+  des.3, 
+  aes(x = month, y = Nombre_de_deces, fill = month)) +
+  geom_violin(alpha = 0.5) +
+  # geom_point(position = position_jitter(seed = 1, width = 0.2), size = 0.1) +
+  stat_summary(fun.data=mean_sdl, mult=1, 
+               geom="pointrange", color="black") +
+  facet_wrap(~ sexe) +
+  theme_bw() +
+  theme(legend.position = "none",
+        strip.background = element_rect(fill = "white", color = NA),
+        strip.text = element_text(color = "black"),
+        panel.border = element_rect(color = "black", fill = NA)) +
+  labs(x = "Months",
+       y = "Daily deaths")
+
+# Display figure
+g
+
+# save figure
+sauveFigure(config = 8, 
+            title = paste0("fig3"),
+            path = folderFigures)
+g
+dev.off()
+```
+
+# Climate scenario dataset
+
+## Load data series
+We import daily data series for climate trajectories. The models selected here
+are those with both RCP 2.6, 4.5 and RCP 8.5 projections.
+
+```{r, echo=TRUE, message=FALSE, warning=FALSE}
+
+# import list model
+info_model <- read_excel("data/info_modeles.xlsx")
+
+# period parameters
+start_year <- 2020
+end_year <- 2100
+year_breaks <- c(2000, 2009, 2019, 2029, 2039, 2049, 2059, 2069, 2079, 2089, 2100)
+year_labels <- c("2000s", "2010s", "2020s", "2030s", "2040s",
+                 "2050s", "2060s", "2070s", "2080s","2090s")
+# heatwave parameter
+min_level <- 17
+max_level <- 30
+
+# import data
+model <- lapply(1:nrow(info_model), function(i)
+{
+  print(paste0(info_model$Id[i],"- RCP", info_model$RCP[i]))
+  treat_rcp(info_model$Id[i], info_model$RCP[i], info_model,
+            min_level, max_level, start_year, end_year, 
+            new_calcul= FALSE, city = FALSE, path = fold_data, path_raw = fold_data_raw)
+})
+model <- do.call("rbind", model)
+```
+
+## Projection of temperatures and heatwaves by RCP scenario in Metropolitan France over the period 2020-2100
+
+This code generates Figure 4 of the paper. 
+
+```{r, echo=TRUE, message=FALSE, warning=FALSE}
+figures <- summary_climate(model)
+```
+
+```{r fig_proj_temp_rcp, echo=TRUE, message=FALSE, warning=FALSE,fig.height = 12, fig.width = 12}
+# Display figure
+figures$fig_agg
+
+# save figure
+sauveFigure(config = 7, 
+            title = paste0("fig4"),
+            path = folderFigures)
+figures$fig_agg
+dev.off()
+```
+
+## Additional informations in Section 6.1
+
+The figures presented in the last paragraph of Section 6.1 can be reproduced by running the code below. 
+
+```{r}
+# Some statistics
+df <- model %>%
+  filter(YEARS >= start_year, YEARS < end_year) %>%
+  group_by(model, rcp, YEARS, Num_vague) %>%
+  summarise(Duration = sum(Ind_canicule),
+            Severity = sum(Severite_canicule),
+            Intensity = max(Severite_canicule)) %>%
+  group_by(model, rcp) %>%
+  summarise(nv_vag = sum(Num_vague),
+            max_dur = max(Duration),
+            max_dur_name = YEARS[which.max(Duration)],
+            max_sev = max(Severity),
+            max_sev_name = YEARS[which.max(Severity)],
+            max_int = max(Intensity),
+            max_int_name = YEARS[which.max(Intensity)]
+  )
+
+
+df <- df %>%
+  rename(
+    Model = model,
+    RCP = rcp ,
+    Heatwave_Counts = nv_vag,
+    Max_Duration = max_dur,
+    Year_of_Max_Duration = max_dur_name,
+    Max_Severity = max_sev,
+    Year_of_Max_Severity = max_sev_name,
+    Max_Intensity = max_int,
+    Year_of_Max_Intensity = max_int_name 
+  )
+  
+# Filter on scenario RCP 2.6
+df %>%
+  filter(RCP == "2.6") %>%  
+  kableExtra::kable(booktabs=TRUE) %>%
+  kable_classic_2(full_width = F)
+
+# Filter on scenario  RCP 4.5
+df %>%
+  filter(RCP == "4.5") %>%
+  kableExtra::kable(booktabs=TRUE) %>%
+  kable_classic_2(full_width = F)
+
+# Filter on scenario RCP 8.5
+df %>%
+  filter(RCP == "8.5") %>%
+  kableExtra::kable(booktabs=TRUE) %>%
+  kable_classic_2(full_width = F)
+```
+
+# Results of Appendix B
+
+## Load and prepare daily data 
+
+```{r, echo=TRUE}
+base_nb_deces <- lapply(list_sexe, function(s){
+  import_data_death(s, annee_deb, annee_fin, outlier)
+})
+
+base_nb_deces <- lapply(base_nb_deces, function(data){
+  data$age_bk <- ifelse(
+    data$age_bk == "0-49", "0-64", ifelse(
+      data$age_bk == "50-54", "0-64", ifelse(
+        data$age_bk == "55-59", "0-64", ifelse(
+          data$age_bk == "60-64", "0-64", ifelse(
+            data$age_bk == "65-69", "65-74", ifelse(
+              data$age_bk == "70-74", "65-74", ifelse(
+                data$age_bk == "75-79", "75-84", ifelse(
+                  data$age_bk == "80-84", "75-84", ifelse(
+                    data$age_bk == "85-89", "85+", ifelse(
+                      data$age_bk == "90 et +", "85+", NA
+                    ))))))))))
+  
+  data <- data %>%
+    group_by(DateDec, age_bk) %>%
+    summarise(Nombre_de_deces = sum(Nombre_de_deces),
+              YEARS = min(YEARS),
+              TAVG = min(TAVG),
+              Ind_canicule = min(Ind_canicule),
+              time = min(time),
+              dow = min(dow),
+              month = min(month)
+    )
+  return(as.data.table(data))
+})
+
+# Aggregate number of deaths by cluster
+## Daily data
+tab_agg_daily_death <- do.call("rbind", lapply(c("f", "m"), function(ss)
+{
+ df <- base_nb_deces[[ss]] %>%
+   dplyr::select(DateDec, age_bk, Nombre_de_deces, YEARS)%>%
+   mutate(sex = ss) %>%
+   group_by(YEARS, age_bk, sex) %>%
+   summarise(deaths = sum(Nombre_de_deces)) %>% 
+   ungroup()
+}))
+```
+
+## Load and prepare annual data 
+
+```{r, echo=TRUE, fig.width=12, fig.height=8 , message=F, warning=F}
+
+# Get death and exposure data from HMD
+load(file =  paste0(fold_data, "/dtx_fr.RData"))
+
+## Annual mortality
+dtx_fr$age_bk <- ifelse(dtx_fr$Age <65 , "0-64",
+                        ifelse(dtx_fr$Age <75 ,"65-74",
+                               ifelse(dtx_fr$Age <85 ,"75-84","85+")
+                        ))
+tab_agg_annual_death <- dtx_fr %>%
+  dplyr::select(Year, Age, age_bk, Female, Male) %>%
+  pivot_longer(cols = Female:Male,
+               names_to = "sex", values_to = "deaths") %>%
+  mutate(sex = factor(sex)) %>%
+  group_by(Year, age_bk, sex) %>%
+  summarise(deaths = sum(deaths)) %>% 
+   ungroup()
+
+tab_agg_annual_death$sex <- fct_recode(tab_agg_annual_death$sex,
+                                       f = "Female", m = "Male")
+```
+
+## Comparison of annual death counts from daily data and annual data
+
+This code generates Figure 12 of the paper. 
+
+```{r, echo=TRUE, fig.width=12, fig.height=8 , message=F, warning=F}  
+# Merge data
+tab_compar_deaths <- tab_agg_daily_death %>%
+  left_join(tab_agg_annual_death, by = c("YEARS"= "Year",
+                                         "age_bk"= "age_bk",
+                                         "sex" = "sex")) %>%
+  mutate(age_bk = factor(age_bk), gap = (deaths.x - deaths.y) / deaths.x)%>%
+  pivot_longer(cols = deaths.x:deaths.y,
+               names_to = "source", values_to = "deaths")
+
+tab_compar_deaths$source <- fct_recode(tab_compar_deaths$source,
+                                       daily = "deaths.x", yearly = "deaths.y")  
+
+
+# Compar death counts by age bucket and sex
+p_compar_deaths <- ggplot(tab_compar_deaths, aes(x = YEARS, y = deaths)) +
+  geom_line(aes(color = source)) +
+  facet_grid(sex ~ age_bk, labeller = labeller(sex = c("f" = "Female", "m" = "Male")))+ 
+  labs(x = "Year",
+       y = "Number of deaths") +
+  theme_bw() +
+  theme(
+    strip.background = element_rect(fill = "white", color = NA),
+    strip.text = element_text(color = "black"),
+    panel.border = element_rect(color = "black", fill = NA),
+    legend.position = c(0.05, 0.90),
+    legend.background = element_rect(fill = "white", color = "black"),
+    legend.title = element_blank()
+  )
+
+# Display figure
+p_compar_deaths
+
+# save figure
+sauveFigure(config = 11, 
+            title = paste0("fig12"),
+            path = folderFigures)
+p_compar_deaths
+dev.off()
+```
+
+
+# Session Information
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+sessionInfo()
+```

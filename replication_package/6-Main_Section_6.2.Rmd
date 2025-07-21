@@ -1,0 +1,484 @@
+---
+title: "Results presented in Section 6.2 and in Appendix C.1 and C.2"
+author: "Quentin Guibert"
+date: "2025-06-23"
+institute: "Université Paris-Dauphine"
+output:
+  html_document:
+    toc: true
+    toc_depth: 2
+    df_print: paged
+    code_folding: show
+  pdf_document:
+    toc: true
+    toc_depth: 2
+    number_sections: true
+editor_options:
+  markdown:
+    wrap: 72
+---
+
+```{r setup, include=FALSE}
+## Global options
+knitr::opts_chunk$set(cache = FALSE, warning = FALSE, message = FALSE, fig.retina = 2)
+options(encoding = 'UTF-8')
+Sys.setlocale("LC_TIME", "English")
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+## Folds
+folder <- getwd() # If necessary, please set your working directory
+fold_data <- paste0(folder, "/data/")
+fold_data_raw <- paste0(folder, "/data_raw/")
+fold_bib <- paste0(folder, "/functions/")
+folderTables <- paste0(folder, "/tables/")
+folderFigures <- paste0(folder, "/figures/")
+#---------------------------------------------------------------------------------------------------
+#### Load functions : ####
+# Source functions
+for (f in list.files(fold_bib))
+  source(paste(fold_bib,f,sep=""), encoding = "UTF-8")
+
+####  Load packages : ####
+invisible(lapply(c(
+  "lattice",
+  "grid",
+  "ggplot2",
+  "gridExtra",
+  "locfit",
+  "scales",
+  "lubridate",
+  "splines",
+  "mgcv",
+  "dlnm",
+  "MASS",
+  "mvtnorm",
+  "Rfast",
+  "parallel",
+  "data.table",
+  "formattable",
+  "RColorBrewer",
+  "readxl",
+  "kableExtra",
+  "dplyr",
+  "tidyr",
+  "tidyverse",
+  "rmarkdown",
+  "ggthemes",
+  "cowplot",
+  "ggridges",
+  "viridis",
+  "hrbrthemes",
+  "colorspace",
+  "ggbeeswarm",
+  "ggfan"),
+  instal.import.package))
+
+#----------------------------------------------------------
+#theme graphique
+theme_set(theme_bw())
+trellis.device(color = FALSE)
+```
+
+# Parameters definition
+
+```{r, echo=TRUE, message=FALSE, warning=FALSE}
+# Main parameters
+list_sexe <- list(m = 1,f = 2)
+age_breaks <- c(0, 64, 74, 84, Inf)
+age_labels <- c("0-64", "65-74", "75-84", "85+")
+
+# training period
+annee_deb <- 1980
+annee_fin <- 2019
+annee_in_sample <- 1980:2015
+annee_out_sample <- 2016:2019
+outlier <- 999 # exclude no atypical year
+
+# forecasting period
+start_year <- 2020
+end_year <- 2070
+year_breaks <- c(1980, 1989, 1999, 2009, 2019, 2029, 2039, 2049, 2059, 2069, 2079, 2089, 2100)
+year_labels <- c("1980s", "1990s", "2000s", "2010s", "2020s", "2030s", "2040s",
+                 "2050s", "2060s", "2070s", "2080s","2090s")
+
+config_temp <-c(
+  "all_effect", "hot_effect", "cold_effect", "moderate_hot_effect",
+  "moderate_cold_effect","extr_hot_effect", "extr_cold_effect", "canicule_effect"
+)
+
+# simulation
+nsim <- 100 # number of simulations
+parallel <- "no" # parallel option
+ncpus <- 4 # number of cores
+
+# other parameters
+AGE_MAX <- 108
+```
+
+# Load data series 
+
+We import daily data series for death counts and temperatures. In the following lines,
+we prepare our data before fiting the DLNM model. 
+
+```{r, echo=TRUE, message=FALSE, warning=FALSE}
+base_nb_deces <- lapply(list_sexe, function(s){
+  import_data_death(s, annee_deb, annee_fin, outlier)
+})
+
+base_nb_deces <- lapply(base_nb_deces, function(data){
+  data$age_bk <- ifelse(
+    data$age_bk == "0-49", "0-64", ifelse(
+      data$age_bk == "50-54", "0-64", ifelse(
+        data$age_bk == "55-59", "0-64", ifelse(
+          data$age_bk == "60-64", "0-64", ifelse(
+            data$age_bk == "65-69", "65-74", ifelse(
+              data$age_bk == "70-74", "65-74", ifelse(
+                data$age_bk == "75-79", "75-84", ifelse(
+                  data$age_bk == "80-84", "75-84", ifelse(
+                    data$age_bk == "85-89", "85+", ifelse(
+                      data$age_bk == "90 et +", "85+", NA
+                    ))))))))))
+  
+  data <- data %>%
+    group_by(DateDec, age_bk) %>%
+    summarise(Nombre_de_deces = sum(Nombre_de_deces),
+              YEARS = min(YEARS),
+              TAVG = min(TAVG),
+              Ind_canicule = min(Ind_canicule),
+              time = min(time),
+              dow = min(dow),
+              month = min(month)
+    )
+  return(as.data.table(data))
+})
+
+```
+
+# DLNM model for the whole year with LAG = 21 days
+
+We fit DLNM models for each gender and each age bucket. These models are calibrated
+over all the years. 
+
+## Parameters definition
+```{r, echo=TRUE, fig.width=12, fig.height=8 , message=F, warning=F}
+# DLNM Parameters
+param_dlnm_whole <- list(
+  # main model, cubic natural spline with three internal knots in
+  #   the 10th, 75th, 90th percentiles of the temperature distribution
+  varfun = "bs",
+  vardegree = 2,
+  varper  = c(10,75,90),
+  ## specification of the lag function
+  # Definition of the maximum lag, that is, 21 days
+  lag  = 21,
+  lagnk  = 3,
+  ## degree of freedom for seasonality
+  dfseas  = 8,
+  ## degree of freedom for trend
+  dftrend = NULL
+)
+```
+
+## Model estimation
+
+In the following lines, we fit the DLNM model.
+
+```{r, echo=TRUE, fig.width=12, fig.height=8 , message=F, warning=F, comment= F}
+fit <- lapply(base_nb_deces, function(x){
+  fit_dlnm(x, param_dlnm_whole, per_age = T, summer = F, psi = NULL)
+})
+```
+
+Then, we perform in-sample analysis.
+
+```{r echo=TRUE, fig.width=12, fig.height=8}
+# Produce the RR plots
+tempplot_all_sex <- summary_dlnm_all_sex(fit)
+
+# in-sample performance of the fitted model for the whole year.
+perf_mort <- lapply(names(base_nb_deces), function(x){
+  perf_dnlm(fit[[x]])
+})
+names(perf_mort) <- names(base_nb_deces)
+```
+
+## Calculating attribable fraction
+
+```{r, echo=TRUE, eval = TRUE, fig.width=12, fig.height=8}
+# Quantiles for extreme hot and cold
+q025 <- quantile(base_nb_deces$m$TAVG, 0.025)
+q975 <- quantile(base_nb_deces$m$TAVG, 0.975)
+
+# Run Excess of mortality
+xs_mort <- lapply(names(base_nb_deces), function(x){
+  res <- excess_mort_dlnm(base_nb_deces[[x]],
+                          fit[[x]],
+                          q_range = c(q025, q975),
+                          nsim = nsim, 
+                          parallel = parallel, 
+                          ncpus = ncpus)
+  return(res)
+})
+names(xs_mort) <- names(base_nb_deces)
+
+# Save the results
+save(xs_mort, file =  paste0(fold_data, "xs_mort_lag_21"))
+```
+
+# Results of Section 6.2
+
+## Cumulative relative risk of mortality over a 21-day period in Metropolitan France
+
+This code generates Figure 5 of the paper. 
+
+```{r dlnm_rr_curve, eval = TRUE, echo=TRUE,fig.height = 12, fig.width = 12}
+# Display figure
+tempplot_all_sex
+
+# save figure
+sauveFigure(config = 7,
+            title = paste0("fig5"),
+            path = folderFigures)
+tempplot_all_sex
+dev.off()
+```
+
+## Temperature attributable fraction in Metropolitan France, 
+
+This code generates Figure 6 of the paper. 
+
+```{r temp_decomp, echo=TRUE, fig.width=12, fig.height=6}
+
+# Convert to a data frame
+xs_data <- lapply(names(xs_mort), function(i){
+  xs_mort[[i]]$excess_mort %>%
+    dplyr::mutate(gender = i) %>%
+    rename(year = YEARS)
+})
+xs_data <- do.call("rbind", xs_data)
+
+
+# Generate plot
+sub_palette <- c("black", "blue", "red", "lightblue", "orange")
+p <- xs_data %>%
+  dplyr::filter(temp_effect %in% c("all_effect",
+                                   "moderate_hot_effect",
+                                   "moderate_cold_effect",
+                                   "extr_hot_effect","extr_cold_effect")) %>%
+  mutate(temp_effect = fct_recode(temp_effect,
+                                  "All effects" = "all_effect",
+                                  "Extreme cold" = "extr_cold_effect",
+                                  "Extreme hot" = "extr_hot_effect",
+                                  "Moderate cold" = "moderate_cold_effect",
+                                  "Moderate hot" = "moderate_hot_effect")) %>%
+  mutate(gender = fct_recode(gender, "Females" = "f" ,
+                             "Males" = "m")) %>%
+  group_by(year, sim, temp_effect, gender) %>%
+  summarise(Dxt = sum(Dxt),
+            an_sum_all_ages = sum(an_sum),
+            cases_sum_all_ages = sum(cases_sum)) %>%
+  mutate(xs_rate = an_sum_all_ages / cases_sum_all_ages * 100) %>%
+  group_by(year, temp_effect, gender) %>%
+  summarise(xsmean = mean(xs_rate),
+            xsmax = quantile(xs_rate, 0.95),
+            xsmin = quantile(xs_rate, 0.05)) %>%
+  ggplot(aes(x = year, y = xsmean)) +
+  geom_line(aes(colour = factor(temp_effect))) +
+  geom_ribbon(aes(ymax = xsmax, ymin = xsmin, fill = factor(temp_effect)), alpha = 0.3) +
+  facet_wrap(~ gender, scales = "free_x", ncol = 2) + 
+  theme(legend.position = "bottom",
+        legend.background = element_rect(fill = "white", color = "black"),
+        strip.background = element_rect(fill = "white", color = NA),
+        strip.text = element_text(color = "black"),
+        panel.border = element_rect(color = "black", fill = NA),
+        text = element_text(size = 12))+
+  labs(x = "Years", y = "Excess mortality (%)", fill = "Temperature effect", 
+       colour = "Temperature effect") +
+  scale_colour_manual(values = sub_palette) +
+  scale_fill_manual(values = sub_palette)
+
+# Display figure
+p
+
+# save figure
+sauveFigure(config = 8, 
+            title = paste0("fig6"),
+            path = folderFigures)
+p
+dev.off()
+```
+
+
+# Results of Appendix C.1
+
+In this section, we present the predicted all-cause death counts obtained from the DLNM model,
+and visually assess its ability to reproduce the seasonality of daily deaths
+across age groups and genders.
+
+## Comparison of observed daily deaths and predicted deaths for women
+
+This code generates Figure 13 of the paper.
+
+```{r, echo=TRUE, fig.width=12, fig.height=12 }
+# Display figure
+perf_mort$f$desc_1
+
+# save figure
+sauveFigure(config = 7,
+            title = paste0("fig13"),
+            path = folderFigures)
+perf_mort$f$desc_1
+dev.off()
+```
+
+## Comparison of observed daily deaths and predicted deaths for men
+
+This code generates Figure 14 of the paper.
+
+```{r, echo=TRUE, fig.width=12, fig.height=12}
+# Display figure
+perf_mort$m$desc_1
+
+# save figure
+sauveFigure(config = 7,
+            title = paste0("fig14"),
+            path = folderFigures)
+perf_mort$m$desc_1
+dev.off()
+```
+
+## Decomposition of daily death counts for women predicted by the DLNM model
+
+This code generates Figure 15 of the paper.
+
+```{r, echo=TRUE, fig.width=12, fig.height=12}
+# Display figure
+perf_mort$f$desc_2
+
+# save figure
+sauveFigure(config = 7,
+            title = paste0("fig15"),
+            path = folderFigures)
+perf_mort$f$desc_2
+dev.off()
+```
+
+
+## Decomposition of daily death counts for men predicted by the DLNM model
+
+This code generates Figure 16 of the paper.
+
+```{r, echo=TRUE, fig.width=12, fig.height=12}
+# Display figure
+perf_mort$m$desc_2
+
+# save figure
+sauveFigure(config = 7,
+            title = paste0("fig16"),
+            path = folderFigures)
+perf_mort$m$desc_2
+dev.off()
+```
+
+## Evolution of daily average temperatures
+
+This code generates Figure 17 of the paper. 
+
+```{r temperature, eval = TRUE, echo=TRUE,fig.height = 12, fig.width = 12}
+p_temperature  <- ggplot(fit$m[[1]]$model$data) +
+  geom_line(aes(x = DateDec, y = TAVG), size = 0.5, col = "black") +
+  xlab("Year") + ylab("Avg. Temperature [C]") +
+  theme_bw() +
+  theme(legend.position = "none",
+        strip.background = element_rect(fill = "white", color = NA),
+        strip.text = element_text(color = "black"),
+        panel.border = element_rect(color = "black", fill = NA),
+        text = element_text(size = 12))
+
+# Display figure
+p_temperature 
+
+# save figure
+sauveFigure(config = 1,
+            title = paste0("fig17"),
+            path = folderFigures)
+p_temperature
+dev.off()
+```
+
+# Results of Appendix C.2
+
+In this section, we conduct a statistical analysis to evaluate the goodness
+of fit of the DLNM model.
+
+## Monthly distribution of observed and predicted numbers of deaths based for women
+
+This code generates Figure 18 of the paper. 
+
+```{r dlnm_obs_pred_f, echo=TRUE, fig.width=12, fig.height=12}
+# Display figure
+perf_mort$f$perf
+
+# save figure
+sauveFigure(config = 7,
+            title = paste0("fig18"),
+            path = folderFigures)
+perf_mort$f$perf
+dev.off()
+```
+
+## Monthly distribution of observed and predicted numbers of deaths based for men
+
+This code generates Figure 19 of the paper. 
+
+```{r dlnm_obs_pred_m, echo=TRUE, fig.width=12, fig.height=12}
+# Display figure
+perf_mort$m$perf
+
+# save figure
+sauveFigure(config = 7,
+            title = paste0("fig19"),
+            path = folderFigures)
+perf_mort$m$perf
+dev.off()
+```
+
+## Representation of deviance residuals for DLNM models for women
+
+This code generates Figure 20 of the paper. 
+
+```{r dlnm_resid_f, echo=TRUE, fig.width=12, fig.height=12}
+# Display figure
+perf_mort$f$residual
+
+# save figure
+sauveFigure(config = 10,
+            title = paste0("fig20"),
+            path = folderFigures)
+perf_mort$f$residual
+dev.off()
+```
+
+
+## Representation of deviance residuals for DLNM models for men
+
+This code generates Figure 21 of the paper. 
+
+```{r dlnm_resid_m, echo=TRUE, fig.width=12, fig.height=12}
+# Display figure
+perf_mort$m$residual
+
+# save figure
+sauveFigure(config = 10,
+            title = paste0("fig21"),
+            path = folderFigures)
+perf_mort$m$residual
+dev.off()
+```
+
+# Session Information
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+sessionInfo()
+```
